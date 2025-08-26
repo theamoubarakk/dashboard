@@ -1,20 +1,24 @@
-# app.py — EDA One-Page Dashboard (no scroll, fixed grid)
+# app.py — EDA One Page (title padding + nicer palette)
 
 import os
-import numpy as np
 import pandas as pd
+import numpy as np
 import plotly.express as px
 import streamlit as st
 
-# ---- PAGE ----
+# ---------- PAGE ----------
 st.set_page_config(page_title="Baba Jina | EDA One Page", layout="wide")
 
-st.markdown("""
-<style>
-.block-container {padding-top: 0.5rem; padding-bottom: 0.5rem;}
-h2, h3 {margin: 0 0 4px 0;}
-</style>
-""", unsafe_allow_html=True)
+# Fix cropped header + lighter page padding
+st.markdown(
+    """
+    <style>
+      .block-container {padding-top: 2.25rem; padding-bottom: 0.5rem;}
+      h2, h3 {margin-top: 0.25rem; margin-bottom: 0.35rem;}
+    </style>
+    """,
+    unsafe_allow_html=True,
+)
 
 st.markdown("## Exploratory Data Overview")
 
@@ -22,88 +26,119 @@ DATA_DIR = "data"
 SALES_XLSX     = os.path.join(DATA_DIR, "(3) BABA JINA SALES DATA.xlsx")
 SUPPLIERS_XLSX = os.path.join(DATA_DIR, "suppliers_data_cleaned.xlsx")
 
+# ---------- PALETTE ----------
+# Soft modern palette (works on light/dark + colorblind-friendly hues)
+PALETTE = [
+    "#2563EB",  # blue
+    "#10B981",  # teal
+    "#F59E0B",  # amber
+    "#EF4444",  # red
+    "#8B5CF6",  # violet
+    "#14B8A6",  # cyan-teal
+    "#F97316",  # orange
+    "#84CC16",  # lime
+]
+
+# Optional named colors for categories you have
 CAT_COLORS = {
-    "Christmas": "#3b82f6",
-    "Toys": "#22c55e",
-    "Halloween": "#ef4444",
-    "Summer": "#10b981",
-    "Birthdays/Celebrations": "#6366f1",
-    "Fees/Admin": "#a3a3a3",
-    "Unknown": "#94a3b8",
+    "Christmas": "#2563EB",
+    "Toys": "#10B981",
+    "Summer": "#F59E0B",
+    "Halloween": "#EF4444",
+    "Birthdays/Celebrations": "#8B5CF6",
+    "Fees/Admin": "#64748B",
 }
 
-# ---- LOADERS ----
-@st.cache_data
+def color_for_list(keys):
+    # Build a color sequence that respects CAT_COLORS where possible
+    seq = []
+    for i, k in enumerate(keys):
+        seq.append(CAT_COLORS.get(k, PALETTE[i % len(PALETTE)]))
+    return seq
+
+# ---------- LOADERS ----------
+@st.cache_data(show_spinner=False)
 def load_sales():
-    if not os.path.exists(SALES_XLSX): return None
+    if not os.path.exists(SALES_XLSX):
+        return None
     df = pd.read_excel(SALES_XLSX)
-    df["Date"]  = pd.to_datetime(df.get("Date"), errors="coerce")
-    df["Month"] = df["Date"].dt.to_period("M").dt.to_timestamp()
-    df["Year"]  = df["Date"].dt.year
+    if "Date" in df.columns:
+        df["Date"] = pd.to_datetime(df["Date"], errors="coerce")
+        df["Month"] = df["Date"].dt.to_period("M").dt.to_timestamp()
+        df["Year"] = df["Date"].dt.year
+    # Revenue normalization
     if "Total_Amount" in df.columns:
         df["Revenue"] = pd.to_numeric(df["Total_Amount"], errors="coerce")
     else:
-        df["Revenue"] = pd.to_numeric(df.get("Quantity", 0), errors="coerce") * pd.to_numeric(df.get("Unit_Price", 0), errors="coerce")
+        q = pd.to_numeric(df.get("Quantity", 0), errors="coerce")
+        p = pd.to_numeric(df.get("Unit_Price", 0), errors="coerce")
+        df["Revenue"] = q * p
     df["Category"] = df.get("Category", "Unknown").fillna("Unknown")
     return df.dropna(subset=["Revenue"])
 
-@st.cache_data
+@st.cache_data(show_spinner=False)
 def load_suppliers():
-    if not os.path.exists(SUPPLIERS_XLSX): return None
-    df = pd.read_excel(SUPPLIERS_XLSX)
-    if "Amount" in df.columns:
-        df["Order_Amount"] = pd.to_numeric(df["Amount"], errors="coerce")
-    elif "AMOUNT" in df.columns:
-        df["Order_Amount"] = pd.to_numeric(df["AMOUNT"], errors="coerce")
+    if not os.path.exists(SUPPLIERS_XLSX):
+        return None
+    sup = pd.read_excel(SUPPLIERS_XLSX)
+    # Order amount normalization
+    if "Amount" in sup.columns:
+        sup["Order_Amount"] = pd.to_numeric(sup["Amount"], errors="coerce")
+    elif "AMOUNT" in sup.columns:
+        sup["Order_Amount"] = pd.to_numeric(sup["AMOUNT"], errors="coerce")
     else:
-        df["Order_Amount"] = pd.to_numeric(df.get("Price", 0), errors="coerce") * pd.to_numeric(df.get("CTN_Box", 0), errors="coerce")
-    if "New_Year" in df.columns: df["Year"] = df["New_Year"]
-    df["ShopName"] = df.get("Shop", df.get("ShopName", "Unknown")).astype(str)
-    df["Category"] = df.get("Category", "Unknown").fillna("Unknown")
-    return df.dropna(subset=["Order_Amount"])
+        sup["Order_Amount"] = pd.to_numeric(sup.get("Price", 0), errors="coerce") * pd.to_numeric(sup.get("CTN_Box", 0), errors="coerce")
+    # Year normalization
+    if "New_Year" in sup.columns:
+        sup["Year"] = sup["New_Year"]
+    # Shop name best-guess
+    for g in ["Shop", "ShopName", "Supplier", "Vendor", "Name"]:
+        if g in sup.columns:
+            sup["ShopName"] = sup[g].astype(str)
+            break
+    if "ShopName" not in sup.columns:
+        sup["ShopName"] = "Unknown"
+    sup["Category"] = sup.get("Category", "Unknown").fillna("Unknown")
+    return sup.dropna(subset=["Order_Amount"])
 
-sales     = load_sales()
+sales = load_sales()
 suppliers = load_suppliers()
 
-H, M = 180, dict(l=4, r=4, t=20, b=4)
+# ---------- LAYOUT (2 left, 3 right) ----------
+# Tight heights + margins so everything fits 1 page on laptops (no scroll)
+H_SMALL  = 210
+H_MEDIUM = 230
+MARGIN   = dict(l=6, r=6, t=10, b=6)
 
-# ---------- GRID LAYOUT ----------
-# Row 1
-c1, c2 = st.columns(2)
-if sales is not None:
-    monthly = sales.groupby("Month", as_index=False)["Revenue"].sum()
-    fig1 = px.line(monthly, x="Month", y="Revenue", markers=True)
-    fig1.update_layout(height=H, margin=M, showlegend=False)
-    c1.plotly_chart(fig1, use_container_width=True)
+col_left, col_right = st.columns([1, 1])
 
-    cat_rev = sales.groupby("Category", as_index=False)["Revenue"].sum().sort_values("Revenue", ascending=False).head(6)
-    color_seq = [CAT_COLORS.get(c, "#64748b") for c in cat_rev["Category"]]
-    fig2 = px.bar(cat_rev, x="Revenue", y="Category", orientation="h", text_auto=".2s", color="Category", color_discrete_sequence=color_seq)
-    fig2.update_layout(height=H, margin=M, showlegend=False)
-    c2.plotly_chart(fig2, use_container_width=True)
+# LEFT COLUMN (2 charts)
+with col_left:
+    if sales is not None and "Month" in sales.columns:
+        st.subheader("Monthly Revenue Trend (2017–2024)")
+        monthly = sales.groupby("Month", as_index=False)["Revenue"].sum().sort_values("Month")
+        fig1 = px.line(monthly, x="Month", y="Revenue", markers=True,
+                       color_discrete_sequence=[PALETTE[0]])
+        fig1.update_layout(height=H_MEDIUM, margin=MARGIN, showlegend=False)
+        st.plotly_chart(fig1, use_container_width=True)
 
-# Row 2
-c3, c4 = st.columns(2)
-if suppliers is not None:
-    sup_cat_year = suppliers.groupby(["Year","Category"], as_index=False)["Order_Amount"].sum()
-    fig3 = px.line(sup_cat_year, x="Year", y="Order_Amount", color="Category", markers=True,
-                   color_discrete_sequence=[CAT_COLORS.get(c,"#64748b") for c in sup_cat_year["Category"].unique()])
-    fig3.update_layout(height=H, margin=M, legend=dict(font=dict(size=8)))
-    c3.plotly_chart(fig3, use_container_width=True)
+    if suppliers is not None and "Year" in suppliers.columns and "Category" in suppliers.columns:
+        st.subheader("Annual Order Amount Trend by Category")
+        agg = suppliers.groupby(["Year", "Category"], as_index=False)["Order_Amount"].sum().sort_values(["Year", "Category"])
+        # sort legend consistently
+        cats = list(agg["Category"].unique())
+        fig2 = px.line(
+            agg, x="Year", y="Order_Amount", color="Category", markers=True,
+            color_discrete_sequence=color_for_list(cats),
+            category_orders={"Category": cats}
+        )
+        fig2.update_layout(height=H_SMALL, margin=MARGIN, legend_title_text="", legend=dict(orientation="h", yanchor="bottom", y=1.02, x=0))
+        st.plotly_chart(fig2, use_container_width=True)
 
-    top5 = suppliers.groupby("ShopName", as_index=False)["Order_Amount"].sum().sort_values("Order_Amount", ascending=False).head(5)
-    merged = suppliers[suppliers["ShopName"].isin(top5["ShopName"])]
-    fig4 = px.bar(merged, x="ShopName", y="Order_Amount", color="Category", barmode="stack",
-                  color_discrete_sequence=[CAT_COLORS.get(c,"#64748b") for c in merged["Category"].unique()])
-    fig4.update_layout(height=H, margin=M, legend=dict(font=dict(size=8)))
-    c4.plotly_chart(fig4, use_container_width=True)
-
-# Row 3
-c5 = st.container()
-if suppliers is not None and "T_QTY" in suppliers.columns:
-    qty = suppliers.groupby("Year", as_index=False)["T_QTY"].sum()
-    fig5 = px.bar(qty, x="Year", y="T_QTY", text_auto=".2s", color_discrete_sequence=["#2563eb"])
-    fig5.update_layout(height=H, margin=M, showlegend=False)
-    c5.plotly_chart(fig5, use_container_width=True)
-
-st.caption("📊 One-page EDA — Monthly trend, category revenue, supplier trends & concentration. Colors locked for consistency with the report.")
+# RIGHT COLUMN (3 charts)
+with col_right:
+    if sales is not None:
+        st.subheader("Revenue by Product Category")
+        cat_rev = sales.groupby("Category", as_index=False)["Revenue"].sum().sort_values("Revenue", ascending=False).head(6)
+        fig3 = px.bar(
+            cat_rev
