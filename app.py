@@ -84,7 +84,7 @@ suppliers = load_suppliers()
 # ================== SIZING (compact to avoid scroll) ==================
 H_TALL   = 210
 H_MED    = 190
-H_SHORT  = 140
+H_SHORT  = 150
 MARGIN   = dict(l=4, r=4, t=6, b=4)
 
 # ================== LAYOUT ==================
@@ -116,7 +116,7 @@ with col_right:
         cat_rev = sales.groupby("Category", as_index=False)["Revenue"].sum().sort_values("Revenue", ascending=False).head(6)
         fig3 = px.bar(cat_rev, x="Revenue", y="Category", orientation="h", text_auto=".2s",
                       color="Category", color_discrete_sequence=color_for(cat_rev["Category"].tolist()))
-        fig3.update_layout(height=H_MED, margin=MARGIN, legend_title_text="")
+        fig3.update_layout(height=H_SHORT, margin=MARGIN, legend_title_text="")
         st.plotly_chart(fig3, use_container_width=True)
 
     if suppliers is not None:
@@ -126,7 +126,7 @@ with col_right:
         cats2 = list(top5["Category"].unique())
         fig4 = px.bar(top5, x="ShopName", y="Order_Amount", color="Category", barmode="stack",
                       color_discrete_sequence=color_for(cats2))
-        fig4.update_layout(height=H_MED, margin=MARGIN, legend_title_text="")
+        fig4.update_layout(height=H_SHORT, margin=MARGIN, legend_title_text="")
         st.plotly_chart(fig4, use_container_width=True)
 
     if suppliers is not None and "T_QTY" in suppliers.columns:
