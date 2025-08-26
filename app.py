@@ -243,7 +243,7 @@ with left:
     if sales_monthly is not None and not sales_monthly.empty:
         fig = px.area(sales_monthly, x="Month", y="Revenue")
         fig.update_layout(height=300, margin=dict(l=6,r=6,t=6,b=6))
-        st.plotly_chart(fig, use_container_width=True)
+        st.plotly_chart(fig, use_container_width=True, key="sales_monthly_trend")
     else:
         st.markdown('<div class="empty">No monthly sales available.</div>', unsafe_allow_html=True)
     st.markdown('</div>', unsafe_allow_html=True)
@@ -255,25 +255,26 @@ with left:
         fig = px.bar(sales_by_cat.head(12), x="Category", y="Revenue", text_auto=".2s")
         fig.update_traces(textposition="outside")
         fig.update_layout(height=320, margin=dict(l=6,r=6,t=6,b=6))
-        st.plotly_chart(fig, use_container_width=True)
+        st.plotly_chart(fig, use_container_width=True, key="sales_by_category")
     else:
         st.markdown('<div class="empty">No category breakdown available.</div>', unsafe_allow_html=True)
     st.markdown('</div>', unsafe_allow_html=True)
 
-    # Forecast Tabs (placeholder using a simple SMA as visual until you plug Prophet/SARIMA)
+    # Forecast Tabs (placeholder until you plug Prophet/SARIMA)
     st.markdown('<div class="card" style="margin-top:12px;">', unsafe_allow_html=True)
     st.markdown('<div class="section-sub">Forecast (demo)</div>', unsafe_allow_html=True)
     if sales_monthly is not None and not sales_monthly.empty:
         df = sales_monthly.copy()
         df["SMA3"] = df["Revenue"].rolling(3).mean()
         df["SMA6"] = df["Revenue"].rolling(6).mean()
-        tabs = st.tabs(["Halloween", "Toys", "Bicycles"])
-        for i, t in enumerate(tabs):
-            with t:
-                # For the prototype, show the same series; you’ll later filter per category/series
+
+        tab_names = ["Halloween", "Toys", "Bicycles"]
+        tabs = st.tabs(tab_names)
+        for name, tab in zip(tab_names, tabs):
+            with tab:
                 fig = px.line(df, x="Month", y=["Revenue","SMA3","SMA6"], labels={"value":"Revenue"})
                 fig.update_layout(height=280, legend_title_text="", margin=dict(l=6,r=6,t=6,b=6))
-                st.plotly_chart(fig, use_container_width=True)
+                st.plotly_chart(fig, use_container_width=True, key=f"forecast_{name.lower()}")
                 st.caption("Replace with SARIMA/Prophet per category once ready.")
     else:
         st.markdown('<div class="empty">Add monthly series to enable forecast view.</div>', unsafe_allow_html=True)
@@ -290,7 +291,7 @@ with right:
         fig = px.bar(top5, x="ShopName", y="Order_Amount", text_auto=".2s")
         fig.update_traces(textposition="outside")
         fig.update_layout(height=280, margin=dict(l=6,r=6,t=6,b=6))
-        st.plotly_chart(fig, use_container_width=True)
+        st.plotly_chart(fig, use_container_width=True, key="suppliers_top5")
     else:
         st.markdown('<div class="empty">No supplier rows available for the selected years.</div>', unsafe_allow_html=True)
     st.markdown('</div>', unsafe_allow_html=True)
@@ -302,7 +303,7 @@ with right:
         agg = sup_f.groupby(["Year","Category"], as_index=False)["Order_Amount"].sum()
         fig = px.bar(agg, x="Year", y="Order_Amount", color="Category", barmode="stack")
         fig.update_layout(height=300, margin=dict(l=6,r=6,t=6,b=6))
-        st.plotly_chart(fig, use_container_width=True)
+        st.plotly_chart(fig, use_container_width=True, key="suppliers_spend_stack")
     else:
         st.markdown('<div class="empty">Add Year and Category in suppliers to see this chart.</div>', unsafe_allow_html=True)
     st.markdown('</div>', unsafe_allow_html=True)
@@ -338,7 +339,7 @@ with colA:
         r_agg = r.groupby("Month", as_index=False).size().rename(columns={"size":"Bookings"})
         fig = px.area(r_agg, x="Month", y="Bookings")
         fig.update_layout(height=280, margin=dict(l=6,r=6,t=6,b=6))
-        st.plotly_chart(fig, use_container_width=True)
+        st.plotly_chart(fig, use_container_width=True, key="rentals_over_time")
     else:
         st.markdown('<div class="empty">No dated rental records available.</div>', unsafe_allow_html=True)
     st.markdown('</div>', unsafe_allow_html=True)
@@ -384,17 +385,16 @@ with colB:
     # Points Earned vs Redeemed (placeholder—replace with your loyalty table when ready)
     st.markdown('<div class="card" style="margin-top:12px;">', unsafe_allow_html=True)
     st.markdown('<div class="section-sub">Points Earned vs Redeemed</div>', unsafe_allow_html=True)
-    # Prototype: synthesize small sample if you don't have table yet
-    if True:
-        pts = pd.DataFrame({
-            "Month": pd.date_range("2024-01-01", periods=12, freq="MS"),
-            "Earned": np.random.randint(800, 1600, 12),
-            "Redeemed": np.random.randint(300, 1100, 12)
-        })
-        fig = px.bar(pts, x="Month", y=["Earned","Redeemed"], barmode="group")
-        fig.update_layout(height=280, margin=dict(l=6,r=6,t=6,b=6), legend_title_text="")
-        st.plotly_chart(fig, use_container_width=True)
-        st.caption("Hook this to your loyalty transactions when available.")
+    # Prototype data until you connect the real loyalty table
+    pts = pd.DataFrame({
+        "Month": pd.date_range("2024-01-01", periods=12, freq="MS"),
+        "Earned": np.random.randint(800, 1600, 12),
+        "Redeemed": np.random.randint(300, 1100, 12)
+    })
+    fig = px.bar(pts, x="Month", y=["Earned","Redeemed"], barmode="group")
+    fig.update_layout(height=280, margin=dict(l=6,r=6,t=6,b=6), legend_title_text="")
+    st.plotly_chart(fig, use_container_width=True, key="loyalty_points_earned_redeemed")
+    st.caption("Hook this to your loyalty transactions when available.")
     st.markdown('</div>', unsafe_allow_html=True)
 
     # Campaign mini-cards
