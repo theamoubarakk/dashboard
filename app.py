@@ -9,13 +9,22 @@ import streamlit as st
 # ================== PAGE / THEME ==================
 st.set_page_config(page_title="Baba Jina | EDA One Page", layout="wide")
 
-# Reduce top padding so the big title doesn't clip and limit vertical space
+# Adjust padding so big title never clips
 st.markdown(
     """
     <style>
-      .block-container { padding-top: 1.0rem; padding-bottom: 0.4rem; }
-      h2, h3 { margin-top: .25rem; margin-bottom: .35rem; }
-      .stPlotlyChart { margin-top: .2rem; margin-bottom: .2rem; }
+      .block-container {
+          padding-top: 2.2rem !important;   /* more top space */
+          padding-bottom: 0.4rem;
+      }
+      h2, h3 {
+          margin-top: .25rem;
+          margin-bottom: .35rem;
+      }
+      .stPlotlyChart {
+          margin-top: .2rem;
+          margin-bottom: .2rem;
+      }
     </style>
     """,
     unsafe_allow_html=True,
