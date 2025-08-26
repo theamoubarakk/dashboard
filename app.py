@@ -56,11 +56,13 @@ def load_sales():
     if not os.path.exists(SALES_XLSX):
         return None
     df = pd.read_excel(SALES_XLSX)
+
     # Dates/periods
     if "Date" in df.columns:
         df["Date"] = pd.to_datetime(df["Date"], errors="coerce")
         df["Month"] = df["Date"].dt.to_period("M").dt.to_timestamp()
-        df["Year"] = df["Date"].dt.year
+        df["Year"]  = df["Date"].dt.year
+
     # Revenue
     if "Total_Amount" in df.columns:
         df["Revenue"] = pd.to_numeric(df["Total_Amount"], errors="coerce")
@@ -68,6 +70,7 @@ def load_sales():
         q = pd.to_numeric(df.get("Quantity", 0), errors="coerce")
         p = pd.to_numeric(df.get("Unit_Price", 0), errors="coerce")
         df["Revenue"] = q * p
+
     df["Category"] = df.get("Category", "Unknown").fillna("Unknown")
     return df.dropna(subset=["Revenue"])
 
@@ -76,6 +79,7 @@ def load_suppliers():
     if not os.path.exists(SUPPLIERS_XLSX):
         return None
     sup = pd.read_excel(SUPPLIERS_XLSX)
+
     # Order amount
     if "Amount" in sup.columns:
         sup["Order_Amount"] = pd.to_numeric(sup["Amount"], errors="coerce")
@@ -86,9 +90,11 @@ def load_suppliers():
             pd.to_numeric(sup.get("Price", 0), errors="coerce")
             * pd.to_numeric(sup.get("CTN_Box", 0), errors="coerce")
         )
+
     # Year
     if "New_Year" in sup.columns:
         sup["Year"] = sup["New_Year"]
+
     # Shop name normalization
     for guess in ["Shop", "ShopName", "Supplier", "Vendor", "Name"]:
         if guess in sup.columns:
@@ -96,6 +102,7 @@ def load_suppliers():
             break
     if "ShopName" not in sup.columns:
         sup["ShopName"] = "Unknown"
+
     # Category fill
     sup["Category"] = sup.get("Category", "Unknown").fillna("Unknown")
     return sup.dropna(subset=["Order_Amount"])
@@ -116,7 +123,10 @@ col_left, col_right = st.columns([1, 1])
 with col_left:
     if sales is not None and "Month" in sales.columns:
         st.subheader("Monthly Revenue Trend (2017–2024)")
-        monthly = sales.groupby("Month", as_index=False)["Revenue"].sum().sort_values("Month")
+        monthly = (
+            sales.groupby("Month", as_index=False)["Revenue"]
+            .sum().sort_values("Month")
+        )
         fig1 = px.line(
             monthly, x="Month", y="Revenue", markers=True,
             color_discrete_sequence=[PALETTE[0]],
@@ -137,7 +147,8 @@ with col_left:
 
 # ----- RIGHT (3 charts) -----
 with col_right:
-          if sales is not None:
+    # 1) Revenue by Product Category (dynamic ticks, raw $)
+    if sales is not None:
         st.subheader("Revenue by Product Category")
 
         cat_rev = (
@@ -147,7 +158,6 @@ with col_right:
             .head(6)
         )
 
-        # build the chart
         fig3 = px.bar(
             cat_rev,
             x="Revenue",            # raw dollars
@@ -158,11 +168,10 @@ with col_right:
             color_discrete_sequence=color_for(cat_rev["Category"].tolist()),
         )
 
-        # ---- dynamic ticks to avoid dot-carpet ----
+        # Dynamic ticks to avoid overcrowding
         max_x = float(cat_rev["Revenue"].max() or 0)
         if max_x >= 5_000_000:
-            # show compact units for multi-million ranges (e.g., $6.8M)
-            xaxis_args = dict(tickformat="~s", tickprefix="$")
+            xaxis_args = dict(tickformat="~s", tickprefix="$")                # e.g., $6.8M
             value_text = "$%{x:,.0f}"
         elif max_x >= 1_000_000:
             xaxis_args = dict(dtick=200_000, tickformat=",", ticks="outside")
@@ -171,7 +180,7 @@ with col_right:
             xaxis_args = dict(dtick=100_000, tickformat=",", ticks="outside")
             value_text = "$%{x:,.0f}"
         else:
-            xaxis_args = dict(dtick=50_000, tickformat=",", ticks="outside")
+            xaxis_args = dict(dtick=50_000,  tickformat=",", ticks="outside")
             value_text = "$%{x:,.0f}"
 
         fig3.update_layout(
@@ -182,28 +191,18 @@ with col_right:
             xaxis=xaxis_args,
             hovermode="y"
         )
-
-        # nice value labels & hover
         fig3.update_traces(
             hovertemplate="<b>%{y}</b><br>Revenue: " + value_text + "<extra></extra>",
             texttemplate=value_text,
             textposition="outside",
             cliponaxis=False
         )
-
         st.plotly_chart(fig3, use_container_width=True)
 
-
-
-
-
-    
-
-    # ===== REPLACED WITH STACKED BAR (Option B logic) =====
+    # 2) Category Distribution for Top 5 Shops (stacked bar)
     if suppliers is not None:
         st.subheader("Category Distribution for Top 5 Shops (by Order Amount)")
 
-        # 1) Top 5 shops by total amount
         shop_tot = (
             suppliers.groupby("ShopName", as_index=False)["Order_Amount"]
             .sum()
@@ -211,14 +210,12 @@ with col_right:
         )
         top5_shops = shop_tot.head(5)["ShopName"]
 
-        # 2) Aggregate by Shop × Category for stacking
         stack = (
             suppliers[suppliers["ShopName"].isin(top5_shops)]
             .groupby(["ShopName", "Category"], as_index=False)["Order_Amount"]
             .sum()
         )
 
-        # 3) Ensure categorical axis is ordered by shop total desc
         shop_order = (
             shop_tot.set_index("ShopName")
             .loc[top5_shops]["Order_Amount"]
@@ -228,7 +225,6 @@ with col_right:
         )
         stack["ShopName"] = stack["ShopName"].astype(str)
 
-        # 4) Consistent category colors
         unique_cats = stack["Category"].unique().tolist()
         color_map = {c: CAT_COLORS.get(c) for c in unique_cats}
         if any(v is None for v in color_map.values()):
@@ -255,6 +251,7 @@ with col_right:
         )
         st.plotly_chart(fig4, use_container_width=True)
 
+    # 3) Quantity per Year
     if suppliers is not None and "T_QTY" in suppliers.columns:
         st.subheader("Total Product Quantity Ordered per Year")
         qty = suppliers.groupby("Year", as_index=False)["T_QTY"].sum()
@@ -262,3 +259,9 @@ with col_right:
                       color_discrete_sequence=[PALETTE[0]])
         fig5.update_layout(height=H_SHORT, margin=MARGIN)
         st.plotly_chart(fig5, use_container_width=True)
+
+# ================== FOOTER ==================
+st.caption(
+    "One-page EDA — Monthly trend, category revenue, supplier trends & concentration. "
+    "Compact layout designed to fit without scrolling."
+)
