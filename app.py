@@ -137,7 +137,7 @@ with col_left:
 
 # ----- RIGHT (3 charts) -----
 with col_right:
-    if sales is not None:
+          if sales is not None:
         st.subheader("Revenue by Product Category")
 
         cat_rev = (
@@ -147,32 +147,57 @@ with col_right:
             .head(6)
         )
 
+        # build the chart
         fig3 = px.bar(
             cat_rev,
-            x="Revenue",
+            x="Revenue",            # raw dollars
             y="Category",
             orientation="h",
-            text_auto=".0f",
             color="Category",
+            text_auto=".0f",
             color_discrete_sequence=color_for(cat_rev["Category"].tolist()),
         )
+
+        # ---- dynamic ticks to avoid dot-carpet ----
+        max_x = float(cat_rev["Revenue"].max() or 0)
+        if max_x >= 5_000_000:
+            # show compact units for multi-million ranges (e.g., $6.8M)
+            xaxis_args = dict(tickformat="~s", tickprefix="$")
+            value_text = "$%{x:,.0f}"
+        elif max_x >= 1_000_000:
+            xaxis_args = dict(dtick=200_000, tickformat=",", ticks="outside")
+            value_text = "$%{x:,.0f}"
+        elif max_x >= 500_000:
+            xaxis_args = dict(dtick=100_000, tickformat=",", ticks="outside")
+            value_text = "$%{x:,.0f}"
+        else:
+            xaxis_args = dict(dtick=50_000, tickformat=",", ticks="outside")
+            value_text = "$%{x:,.0f}"
+
         fig3.update_layout(
             height=H_SHORT,
             margin=MARGIN,
             legend_title_text="",
             xaxis_title="Total Revenue ($)",
-            xaxis=dict(
-                dtick=50000,          # 0, 50k, 100k, ...
-                tickformat=",",       # 350,000 style
-            ),
+            xaxis=xaxis_args,
             hovermode="y"
         )
-       # nicer hover: $ with thousands separator
+
+        # nice value labels & hover
         fig3.update_traces(
-            hovertemplate="<b>%{y}</b><br>Revenue: $%{x:,.0f}<extra></extra>",
-            texttemplate="$%{x:,.0f}"
+            hovertemplate="<b>%{y}</b><br>Revenue: " + value_text + "<extra></extra>",
+            texttemplate=value_text,
+            textposition="outside",
+            cliponaxis=False
         )
+
         st.plotly_chart(fig3, use_container_width=True)
+
+
+
+
+
+    
 
     # ===== REPLACED WITH STACKED BAR (Option B logic) =====
     if suppliers is not None:
