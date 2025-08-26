@@ -9,12 +9,11 @@ import streamlit as st
 # ================== PAGE / THEME ==================
 st.set_page_config(page_title="Baba Jina | EDA One Page", layout="wide")
 
-# Adjust padding so big title never clips
 st.markdown(
     """
     <style>
       .block-container {
-          padding-top: 2.2rem !important;   /* more top space */
+          padding-top: 2.2rem !important;
           padding-bottom: 0.4rem;
       }
       h2, h3 { margin-top: .25rem; margin-bottom: .35rem; }
@@ -34,12 +33,12 @@ SUPPLIERS_XLSX  = os.path.join(DATA_DIR, "suppliers_data_cleaned.xlsx")
 # ================== COLORS ==================
 PALETTE = ["#2563EB", "#10B981", "#F59E0B", "#EF4444", "#8B5CF6", "#14B8A6", "#F97316", "#84CC16"]
 CAT_COLORS = {
-    "Christmas": "#2563EB",
-    "Toys": "#10B981",
-    "Summer": "#F59E0B",
+    "Birthdays/Celebrations": "#2563EB",
+    "Christmas": "#10B981",
+    "Fees/Admin": "#94A3B8",
     "Halloween": "#EF4444",
-    "Birthdays/Celebrations": "#8B5CF6",
-    "Fees/Admin": "#64748B",
+    "Summer": "#EAB308",
+    "Toys": "#22C55E",
 }
 def color_for(keys):
     return [CAT_COLORS.get(k, PALETTE[i % len(PALETTE)]) for i, k in enumerate(keys)]
@@ -51,13 +50,11 @@ def load_sales():
         return None
     df = pd.read_excel(SALES_XLSX)
 
-    # Dates/periods
     if "Date" in df.columns:
         df["Date"] = pd.to_datetime(df["Date"], errors="coerce")
         df["Month"] = df["Date"].dt.to_period("M").dt.to_timestamp()
         df["Year"]  = df["Date"].dt.year
 
-    # Revenue (alias for Total_Amount)
     if "Total_Amount" in df.columns:
         df["Revenue"] = pd.to_numeric(df["Total_Amount"], errors="coerce")
     else:
@@ -74,7 +71,6 @@ def load_suppliers():
         return None
     sup = pd.read_excel(SUPPLIERS_XLSX)
 
-    # Order amount
     if "Amount" in sup.columns:
         sup["Order_Amount"] = pd.to_numeric(sup["Amount"], errors="coerce")
     elif "AMOUNT" in sup.columns:
@@ -85,11 +81,9 @@ def load_suppliers():
             * pd.to_numeric(sup.get("CTN_Box", 0), errors="coerce")
         )
 
-    # Year
     if "New_Year" in sup.columns:
         sup["Year"] = sup["New_Year"]
 
-    # Shop name normalization
     for guess in ["Shop", "ShopName", "Supplier", "Vendor", "Name"]:
         if guess in sup.columns:
             sup["ShopName"] = sup[guess].astype(str)
@@ -97,7 +91,6 @@ def load_suppliers():
     if "ShopName" not in sup.columns:
         sup["ShopName"] = "Unknown"
 
-    # Category fill
     sup["Category"] = sup.get("Category", "Unknown").fillna("Unknown")
     return sup.dropna(subset=["Order_Amount"])
 
@@ -128,21 +121,19 @@ year_start, year_end = st.sidebar.slider(
     step=1,
 )
 
-# Filter data globally to the selected range
 def in_range(df, col="Year"):
     return df[(df[col] >= year_start) & (df[col] <= year_end)]
 
 sales_f = in_range(sales) if sales is not None else None
 suppliers_f = in_range(suppliers) if suppliers is not None else None
 
-# ================== SIZING (compact to avoid scroll) ==================
+# ================== SIZING ==================
 H_TALL   = 210
 H_MED    = 190
-H_SHORT  = 140
+H_SHORT  = 150
 MARGIN   = dict(l=4, r=4, t=6, b=4)
 
 def pick_dtick(max_val):
-    """Choose a dtick so we have about <= 8 ticks."""
     steps = [50_000, 100_000, 200_000, 250_000, 500_000, 1_000_000]
     for s in steps:
         if max_val / s <= 8:
@@ -155,128 +146,81 @@ def range_label():
 # ================== LAYOUT ==================
 col_left, col_right = st.columns([1, 1])
 
-# ----- LEFT (2 charts) -----
+# LEFT CHARTS
 with col_left:
-    # Monthly revenue over time within range
     if sales_f is not None and not sales_f.empty:
-        st.subheader(f"Monthly Revenue Trend")
-        monthly = (
-            sales_f.groupby("Month", as_index=False)["Revenue"]
-            .sum().sort_values("Month")
-        )
-        fig1 = px.line(
-            monthly, x="Month", y="Revenue", markers=True,
-            color_discrete_sequence=[PALETTE[0]],
-        )
+        st.subheader(f"Monthly Revenue Trend ({range_label()})")
+        monthly = sales_f.groupby("Month", as_index=False)["Revenue"].sum().sort_values("Month")
+        fig1 = px.line(monthly, x="Month", y="Revenue", markers=True,
+                       color_discrete_sequence=[PALETTE[0]])
         fig1.update_layout(height=H_TALL, margin=MARGIN, showlegend=False)
         st.plotly_chart(fig1, use_container_width=True)
 
-    # Annual supplier series within range
     if suppliers_f is not None and not suppliers_f.empty:
-        st.subheader(f"Annual Supplier Order Amount by Category")
+        st.subheader(f"Annual Supplier Order Amount by Category ({range_label()})")
         cat_year = suppliers_f.groupby(["Year", "Category"], as_index=False)["Order_Amount"].sum()
         cats = list(cat_year["Category"].unique())
-        fig2 = px.line(
-            cat_year, x="Year", y="Order_Amount", color="Category", markers=True,
-            color_discrete_sequence=color_for(cats),
-        )
-        fig2.update_layout(height=H_MED, margin=MARGIN, legend=dict(orientation="h", y=1.05, x=0))
+        fig2 = px.line(cat_year, x="Year", y="Order_Amount", color="Category",
+                       markers=True, color_discrete_sequence=color_for(cats))
+        fig2.update_layout(height=H_MED, margin=MARGIN,
+                           legend=dict(orientation="h", y=1.05, x=0))
         st.plotly_chart(fig2, use_container_width=True)
 
-# ----- RIGHT (3 charts) -----
+# RIGHT CHARTS
 with col_right:
-    # Revenue by Product Category (sales) across selected range
+    # Revenue by Category
     if sales_f is not None and not sales_f.empty:
-        st.subheader(f"Revenue by Product Category")
-        cat_rev = (
-            sales_f.groupby("Category", as_index=False)["Revenue"]
-            .sum()
-            .sort_values("Revenue", ascending=False)
-        )
-        fig3 = px.bar(
-            cat_rev,
-            x="Revenue",
-            y="Category",
-            orientation="h",
-            color="Category",
-            text_auto=".0f",
-            color_discrete_sequence=color_for(cat_rev["Category"].tolist()),
-        )
+        st.subheader(f"Revenue by Product Category ({range_label()})")
+        cat_rev = sales_f.groupby("Category", as_index=False)["Revenue"].sum().sort_values("Revenue", ascending=False)
+        fig3 = px.bar(cat_rev, x="Revenue", y="Category", orientation="h",
+                      color="Category", text_auto=".0f",
+                      color_discrete_sequence=color_for(cat_rev["Category"].tolist()))
         max_x = float(cat_rev["Revenue"].max() or 0.0)
         dt = pick_dtick(max_x)
         upper = int(np.ceil(max_x / dt) * dt)
-        fig3.update_layout(
-            height=H_SHORT,
-            margin=MARGIN,
-            legend_title_text="",
-            xaxis_title="Total Revenue ($)",
-            xaxis=dict(tickformat=",", dtick=dt, range=[0, upper], ticks="outside"),
-            hovermode="y"
-        )
-        fig3.update_traces(
-            hovertemplate="<b>%{y}</b><br>Revenue: $%{x:,.0f}<extra></extra>",
-            texttemplate="$%{x:,.0f}",
-            textposition="outside",
-            cliponaxis=False
-        )
+        fig3.update_layout(height=H_SHORT, margin=MARGIN, legend_title_text="",
+                           xaxis_title="Total Revenue ($)",
+                           xaxis=dict(tickformat=",", dtick=dt, range=[0, upper], ticks="outside"))
         st.plotly_chart(fig3, use_container_width=True)
 
-    # Top-5 shops stacked bar in selected range (suppliers)
+    # Category Distribution for Top 5 Shops
     if suppliers_f is not None and not suppliers_f.empty:
-        st.subheader(f"Category Distribution for Top 5 Shops (by Order Amount)")
-        shop_tot = (
-            suppliers_f.groupby("ShopName", as_index=False)["Order_Amount"]
-            .sum()
-            .sort_values("Order_Amount", ascending=False)
-        )
-        top5 = shop_tot.head(5)["ShopName"]
-        stack = (
-            suppliers_f[suppliers_f["ShopName"].isin(top5)]
-            .groupby(["ShopName", "Category"], as_index=False)["Order_Amount"]
-            .sum()
-        )
-        shop_order = (
-            shop_tot.set_index("ShopName")
-            .loc[top5]["Order_Amount"]
-            .sort_values(ascending=False)
-            .index.astype(str)
-            .tolist()
-        )
+        st.subheader(f"Category Distribution for Top 5 Shops (by Order Amount) ({range_label()})")
+
+        shop_tot = suppliers_f.groupby("ShopName", as_index=False)["Order_Amount"].sum().sort_values("Order_Amount", ascending=False)
+        top5 = shop_tot.head(5)["ShopName"].astype(str).tolist()
+
+        stack = suppliers_f[suppliers_f["ShopName"].astype(str).isin(top5)].groupby(["ShopName", "Category"], as_index=False)["Order_Amount"].sum()
         stack["ShopName"] = stack["ShopName"].astype(str)
 
         unique_cats = stack["Category"].unique().tolist()
-        color_map = {c: CAT_COLORS.get(c) for c in unique_cats}
-        if any(v is None for v in color_map.values()):
-            filled = color_for(unique_cats)
-            for c, col in zip(unique_cats, filled):
-                color_map[c] = color_map.get(c) or col
+        color_map = {c: CAT_COLORS.get(c, PALETTE[i % len(PALETTE)]) for i, c in enumerate(unique_cats)}
 
-        fig4 = px.bar(
-            stack,
-            x="ShopName",
-            y="Order_Amount",
-            color="Category",
-            barmode="stack",
-            category_orders={"ShopName": shop_order},
-            text_auto=".2s",
-            color_discrete_map=color_map,
-        )
+        fig4 = px.bar(stack, y="ShopName", x="Order_Amount", orientation="h",
+                      color="Category", barmode="stack",
+                      category_orders={"ShopName": top5, "Category": unique_cats},
+                      color_discrete_map=color_map)
+
         fig4.update_layout(
             height=H_SHORT,
             margin=MARGIN,
+            legend=dict(orientation="v", y=0.5, x=1.02),
             legend_title_text="Category",
-            yaxis=dict(tickformat=","),
-            hovermode="x unified",
+            xaxis=dict(title="Total Amount (Monetary Units)", tickformat=","),
+            yaxis=dict(title="Shop ID"),
+            hovermode="y unified",
+            bargap=0.25,
         )
+
         st.plotly_chart(fig4, use_container_width=True)
 
-    # Quantity per year within range (suppliers)
+    # Quantity per year
     if suppliers_f is not None and "T_QTY" in suppliers_f.columns and not suppliers_f.empty:
-        st.subheader(f"Total Product Quantity Ordered per Year")
+        st.subheader(f"Total Product Quantity Ordered per Year ({range_label()})")
         qty = suppliers_f.groupby("Year", as_index=False)["T_QTY"].sum()
-        fig5 = px.bar(
-            qty, x="Year", y="T_QTY", text_auto=".2s",
-            color_discrete_sequence=[PALETTE[0]]
-        )
+        fig5 = px.bar(qty, x="Year", y="T_QTY", text_auto=".2s", color_discrete_sequence=[PALETTE[0]])
         fig5.update_layout(height=H_SHORT, margin=MARGIN)
         st.plotly_chart(fig5, use_container_width=True)
+
+# FOOTER
+st.caption("One-page EDA — Monthly trend, category revenue, supplier trends & concentration. Global year-range filter applies to all charts.")
