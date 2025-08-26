@@ -173,7 +173,7 @@ with col_left:
 
     # Annual supplier series within range
     if suppliers_f is not None and not suppliers_f.empty:
-        st.subheader(f"Annual Supplier Order Amount by Category ({range_label()})")
+        st.subheader(f"Annual Supplier Order Amount by Category")
         cat_year = suppliers_f.groupby(["Year", "Category"], as_index=False)["Order_Amount"].sum()
         cats = list(cat_year["Category"].unique())
         fig2 = px.line(
