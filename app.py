@@ -138,7 +138,7 @@ suppliers_f = in_range(suppliers) if suppliers is not None else None
 # ================== SIZING (compact to avoid scroll) ==================
 H_TALL   = 210
 H_MED    = 190
-H_SHORT  = 150
+H_SHORT  = 140
 MARGIN   = dict(l=4, r=4, t=6, b=4)
 
 def pick_dtick(max_val):
