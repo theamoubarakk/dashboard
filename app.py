@@ -119,15 +119,31 @@ with col_right:
         fig3.update_layout(height=H_SHORT, margin=MARGIN, legend_title_text="")
         st.plotly_chart(fig3, use_container_width=True)
 
-    if suppliers is not None:
-        st.subheader("Category Mix across Top 5 Shops")
-        by_shop = suppliers.groupby("ShopName", as_index=False)["Order_Amount"].sum().sort_values("Order_Amount", ascending=False).head(5)
-        top5 = suppliers[suppliers["ShopName"].isin(by_shop["ShopName"])]
-        cats2 = list(top5["Category"].unique())
-        fig4 = px.bar(top5, x="ShopName", y="Order_Amount", color="Category", barmode="stack",
-                      color_discrete_sequence=color_for(cats2))
-        fig4.update_layout(height=H_SHORT, margin=MARGIN, legend_title_text="")
+       if suppliers is not None:
+        # 4. Category Distribution for Top 5 Shops (by Order Amount)
+        st.markdown("### Category Distribution for Top 5 Shops")
+        top5_shops = suppliers.groupby("Shop", as_index=False)["Order_Amount"].sum()\
+                              .sort_values("Order_Amount", ascending=False).head(5)["Shop"]
+
+        # filter only top5 shops
+        shop_data = suppliers[suppliers["Shop"].isin(top5_shops)]
+
+        fig4 = px.bar(
+            shop_data,
+            x="Shop",
+            y="Order_Amount",
+            color="Category",
+            barmode="stack",
+            text_auto=".2s",
+            color_discrete_sequence=px.colors.qualitative.Set2  # nicer consistent palette
+        )
+        fig4.update_layout(
+            height=260,
+            margin=dict(l=6, r=6, t=30, b=6),
+            legend_title_text="Category"
+        )
         st.plotly_chart(fig4, use_container_width=True)
+
 
     if suppliers is not None and "T_QTY" in suppliers.columns:
         st.subheader("Total Product Quantity Ordered per Year")
