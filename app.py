@@ -140,9 +140,6 @@ def pick_dtick(max_val):
             return s
     return 2_000_000
 
-def range_label():
-    return f"{year_start}" if year_start == year_end else f"{year_start}–{year_end}"
-
 # ================== LAYOUT ==================
 col_left, col_right = st.columns([1, 1])
 
@@ -153,7 +150,8 @@ with col_left:
         monthly = sales_f.groupby("Month", as_index=False)["Revenue"].sum().sort_values("Month")
         fig1 = px.line(monthly, x="Month", y="Revenue", markers=True,
                        color_discrete_sequence=[PALETTE[0]])
-        fig1.update_layout(height=H_TALL, margin=MARGIN, showlegend=False)
+        fig1.update_layout(height=H_TALL, margin=MARGIN, showlegend=False,
+                           xaxis=dict(showgrid=False), yaxis=dict(showgrid=False))
         st.plotly_chart(fig1, use_container_width=True)
 
     if suppliers_f is not None and not suppliers_f.empty:
@@ -163,12 +161,12 @@ with col_left:
         fig2 = px.line(cat_year, x="Year", y="Order_Amount", color="Category",
                        markers=True, color_discrete_sequence=color_for(cats))
         fig2.update_layout(height=H_MED, margin=MARGIN,
-                           legend=dict(orientation="h", y=1.05, x=0))
+                           legend=dict(orientation="h", y=1.05, x=0),
+                           xaxis=dict(showgrid=False), yaxis=dict(showgrid=False))
         st.plotly_chart(fig2, use_container_width=True)
 
 # RIGHT CHARTS
 with col_right:
-    # Revenue by Category
     if sales_f is not None and not sales_f.empty:
         st.subheader(f"Revenue by Product Category")
         cat_rev = sales_f.groupby("Category", as_index=False)["Revenue"].sum().sort_values("Revenue", ascending=False)
@@ -180,47 +178,37 @@ with col_right:
         upper = int(np.ceil(max_x / dt) * dt)
         fig3.update_layout(height=H_SHORT, margin=MARGIN, legend_title_text="",
                            xaxis_title="Total Revenue ($)",
-                           xaxis=dict(tickformat=",", dtick=dt, range=[0, upper], ticks="outside"))
+                           xaxis=dict(tickformat=",", dtick=dt, range=[0, upper],
+                                      ticks="outside", showgrid=False),
+                           yaxis=dict(showgrid=False))
         st.plotly_chart(fig3, use_container_width=True)
 
-    # Category Distribution for Top 5 Shops
     if suppliers_f is not None and not suppliers_f.empty:
         st.subheader(f"Category Distribution for Top 5 Shops (by Order Amount)")
-
         shop_tot = suppliers_f.groupby("ShopName", as_index=False)["Order_Amount"].sum().sort_values("Order_Amount", ascending=False)
         top5 = shop_tot.head(5)["ShopName"].astype(str).tolist()
-
         stack = suppliers_f[suppliers_f["ShopName"].astype(str).isin(top5)].groupby(["ShopName", "Category"], as_index=False)["Order_Amount"].sum()
         stack["ShopName"] = stack["ShopName"].astype(str)
-
         unique_cats = stack["Category"].unique().tolist()
         color_map = {c: CAT_COLORS.get(c, PALETTE[i % len(PALETTE)]) for i, c in enumerate(unique_cats)}
-
         fig4 = px.bar(stack, y="ShopName", x="Order_Amount", orientation="h",
                       color="Category", barmode="stack",
                       category_orders={"ShopName": top5, "Category": unique_cats},
                       color_discrete_map=color_map)
-
-        fig4.update_layout(
-            height=H_SHORT,
-            margin=MARGIN,
-            legend=dict(orientation="v", y=0.5, x=1.02),
-            legend_title_text="Category",
-            xaxis=dict(title="Total Amount (Monetary Units)", tickformat=","),
-            yaxis=dict(title="Shop ID"),
-            hovermode="y unified",
-            bargap=0.25,
-        )
-
+        fig4.update_layout(height=H_SHORT, margin=MARGIN,
+                           legend=dict(orientation="v", y=0.5, x=1.02),
+                           legend_title_text="Category",
+                           xaxis=dict(title="Total Amount (Monetary Units)", tickformat=",", showgrid=False),
+                           yaxis=dict(title="Shop ID", showgrid=False),
+                           hovermode="y unified", bargap=0.25)
         st.plotly_chart(fig4, use_container_width=True)
 
-    # Quantity per year
     if suppliers_f is not None and "T_QTY" in suppliers_f.columns and not suppliers_f.empty:
         st.subheader(f"Total Product Quantity Ordered per Year")
         qty = suppliers_f.groupby("Year", as_index=False)["T_QTY"].sum()
-        fig5 = px.bar(qty, x="Year", y="T_QTY", text_auto=".2s", color_discrete_sequence=[PALETTE[0]])
-        fig5.update_layout(height=H_SHORT, margin=MARGIN)
+        fig5 = px.bar(qty, x="Year", y="T_QTY", text_auto=".2s",
+                      color_discrete_sequence=[PALETTE[0]])
+        fig5.update_layout(height=H_SHORT, margin=MARGIN,
+                           xaxis=dict(showgrid=False), yaxis=dict(showgrid=False))
         st.plotly_chart(fig5, use_container_width=True)
 
-# FOOTER
-st.caption("One-page EDA — Monthly trend, category revenue, supplier trends & concentration. Global year-range filter applies to all charts.")
