@@ -104,6 +104,15 @@ def load_suppliers():
 sales = load_sales()
 suppliers = load_suppliers()
 
+# ================== SIDEBAR (Year selector for sales) ==================
+year_selected = None
+if sales is not None and "Year" in sales.columns:
+    years = sorted([int(y) for y in sales["Year"].dropna().unique()])
+    default_year = years[-1] if years else None
+    year_selected = st.sidebar.selectbox("Year for Revenue by Product Category", years, index=len(years)-1)
+else:
+    default_year = None
+
 # ================== SIZING (compact to avoid scroll) ==================
 H_TALL   = 210
 H_MED    = 190
@@ -141,12 +150,18 @@ with col_left:
 
 # ----- RIGHT (3 charts) -----
 with col_right:
-    # 1) Revenue by Product Category — match EDA (sales, Total_Amount summed by Category), RAW $
+    # 1) Revenue by Product Category — SALES, filtered to the selected year (matches your EDA)
     if sales is not None:
-        st.subheader("Revenue by Product Category")
+        scope = sales.copy()
+        title_suffix = ""
+        if year_selected is not None:
+            scope = scope[scope["Year"] == year_selected]
+            title_suffix = f" ({year_selected})"
+
+        st.subheader(f"Revenue by Product Category{title_suffix}")
 
         cat_rev = (
-            sales.groupby("Category", as_index=False)["Revenue"]
+            scope.groupby("Category", as_index=False)["Revenue"]
             .sum()
             .sort_values("Revenue", ascending=False)
             .head(6)
@@ -162,7 +177,7 @@ with col_right:
             color_discrete_sequence=color_for(cat_rev["Category"].tolist()),
         )
 
-        # ticks: 0..≥300k by 50k steps (adjust if larger)
+        # ticks: 0..≥300k by 50k steps (auto-extend to cover max)
         max_x = float(cat_rev["Revenue"].max() or 0.0)
         step  = 50_000
         upper = max(300_000, int(np.ceil(max_x / step) * step))
