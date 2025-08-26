@@ -1,165 +1,237 @@
 # app.py
-# Baba Jina Toys – Executive Dashboard (Plotly version)
-
-import os
+import streamlit as st
 import pandas as pd
 import numpy as np
-import streamlit as st
 import plotly.express as px
-from pandas.tseries.offsets import MonthEnd
 
-st.set_page_config(page_title="Baba Jina Toys – Executive Dashboard", layout="wide")
+st.set_page_config(page_title="Baba Jina | Capstone Dashboard", layout="wide")
 
-# -------------------- File paths --------------------
-DEFAULT_SALES_PATH     = "(3) BABA JINA SALES DATA.xlsx"
-DEFAULT_SUPPLIERS_PATH = "suppliers_data_cleaned.xlsx"
-DEFAULT_RENTALS_PATH   = "rentals.xlsx"
+# -------------------- THEME / CARDS --------------------
+CARD_CSS = """
+<style>
+.card {background: #ffffff; border-radius: 14px; padding: 18px 18px; box-shadow: 0 4px 18px rgba(0,0,0,0.06); border: 1px solid #eef0f4;}
+.kpi {font-size: 14px; color: #6b7280; margin-bottom: 6px;}
+.kpi-val {font-size: 26px; font-weight: 700; margin-bottom: 2px;}
+.kpi-sub {font-size: 12px; color: #9aa2af;}
+.section-title {font-size: 22px; font-weight: 800; margin: 2px 0 14px;}
+.section-sub {font-size: 12px; color: #64748b; margin-bottom: 6px;}
+</style>
+"""
+st.markdown(CARD_CSS, unsafe_allow_html=True)
 
-# -------------------- Loaders --------------------
-@st.cache_data
-def load_sales(path):
-    df = pd.read_excel(path)
-    # normalize column names
-    df.columns = [c.lower().strip() for c in df.columns]
-    date_col = [c for c in df.columns if "date" in c][0]
-    revenue_col = [c for c in df.columns if "amount" in c or "revenue" in c or "total" in c][0]
-    cat_col = [c for c in df.columns if "category" in c][0]
-    df["date"] = pd.to_datetime(df[date_col])
-    df["revenue"] = pd.to_numeric(df[revenue_col], errors="coerce").fillna(0)
-    df["category"] = df[cat_col].astype(str)
-    return df
+# -------------------- FILE PATHS --------------------
+SALES_PATH     = "/mnt/data/(3) BABA JINA SALES DATA.xlsx"
+SUPPLIERS_PATH = "/mnt/data/suppliers_data_cleaned.xlsx"
+RENTALS_PATH   = "/mnt/data/rentals.xlsx"
 
-@st.cache_data
-def load_suppliers(path):
-    df = pd.read_excel(path)
-    df.columns = [c.lower().strip() for c in df.columns]
-    df = df.rename(columns={
-        "shop":"supplier", "supplier":"supplier",
-        "order_amount":"order_amount", "amount":"order_amount",
-        "category":"category", "year":"year"
-    })
-    return df
+# -------------------- LOADERS (ROBUST) --------------------
+@st.cache_data(show_spinner=False)
+def load_sales():
+    df = pd.read_excel(SALES_PATH)
+    # expected columns from your report: Date, Category, Quantity, Unit_Price, Total_Amount, Subcategory, Customer_ID
+    # normalize
+    if "Date" in df.columns:
+        df["Date"] = pd.to_datetime(df["Date"], errors="coerce")
+    # revenue
+    if "Total_Amount" in df.columns:
+        df["Revenue"] = pd.to_numeric(df["Total_Amount"], errors="coerce")
+    else:
+        q = pd.to_numeric(df.get("Quantity", np.nan), errors="coerce")
+        p = pd.to_numeric(df.get("Unit_Price", np.nan), errors="coerce")
+        df["Revenue"] = q * p
+    df["Category"] = df.get("Category", "Unknown").fillna("Unknown")
+    df["Subcategory"] = df.get("Subcategory", "Unknown").fillna("Unknown")
+    if "Date" in df.columns:
+        df["Year"] = df["Date"].dt.year
+        df["Month"] = df["Date"].dt.to_period("M").dt.to_timestamp()
+    return df.dropna(subset=["Revenue"])
 
-@st.cache_data
-def load_rentals(path):
-    df = pd.read_excel(path)
-    df.columns = [c.lower().strip() for c in df.columns]
-    df = df.rename(columns={
-        "mascot":"mascot", "mascot_name":"mascot",
-        "start_date":"start", "end_date":"end"
-    })
-    df["start"] = pd.to_datetime(df["start"])
-    df["end"]   = pd.to_datetime(df["end"])
-    return df
+@st.cache_data(show_spinner=False)
+def load_suppliers():
+    sup = pd.read_excel(SUPPLIERS_PATH)
+    # try to derive order value
+    if "Amount" in sup.columns:
+        sup["Order_Amount"] = pd.to_numeric(sup["Amount"], errors="coerce")
+    elif "AMOUNT" in sup.columns:
+        sup["Order_Amount"] = pd.to_numeric(sup["AMOUNT"], errors="coerce")
+    else:
+        # fallback from Price * CTN_Box if present
+        price = pd.to_numeric(sup.get("Price"), errors="coerce")
+        ctn   = pd.to_numeric(sup.get("CTN_Box"), errors="coerce")
+        sup["Order_Amount"] = price * ctn
+    # year column in your writeup was "New_Year"
+    if "New_Year" in sup.columns:
+        sup["Year"] = sup["New_Year"]
+    elif "Year" not in sup.columns:
+        sup["Year"] = np.nan
+    sup["Category"] = sup.get("Category", "Unknown").fillna("Unknown")
+    return sup.dropna(subset=["Order_Amount"])
 
-# -------------------- Business logic --------------------
-def monthly_sales_with_forecast(df, cat_filter):
-    df = df[df["category"].isin(cat_filter)] if cat_filter else df
-    df["month"] = df["date"].dt.to_period("M").dt.to_timestamp("M")
-    monthly = df.groupby("month", as_index=False)["revenue"].sum()
-    monthly["year"] = monthly["month"].dt.year
-    monthly["m"] = monthly["month"].dt.month
-    hist = monthly[monthly["year"]<=2024]
-    ref = hist.groupby("m")["revenue"].mean().reset_index()
-    fut = pd.date_range("2025-01-31","2025-12-31",freq="M")
-    forecast = pd.DataFrame({"month":fut})
-    forecast["m"] = forecast["month"].dt.month
-    forecast = forecast.merge(ref,on="m",how="left").rename(columns={"revenue":"forecast"})
-    return monthly, forecast
+@st.cache_data(show_spinner=False)
+def load_rentals():
+    ren = pd.read_excel(RENTALS_PATH)
+    # optional bookings sheet/columns; keep graceful if missing
+    # Normalize potential columns
+    for col in ["Start_Date","End_Date","start_date","end_date","Date","date"]:
+        if col in ren.columns:
+            ren[col] = pd.to_datetime(ren[col], errors="coerce")
+    # unify a start column if any exists
+    ren["start_any"] = None
+    for c in ["Start_Date","start_date","Date","date"]:
+        if c in ren.columns:
+            ren["start_any"] = ren[c]
+            break
+    # prices
+    for guess in ["Rental Price","Rental_Price","rent_price","Price","price"]:
+        if guess in ren.columns:
+            ren["RentalPrice"] = pd.to_numeric(ren[guess], errors="coerce")
+            break
+    # mascot name
+    for guess in ["Mascot Name","Mascot_Name","Name","name","Mascot"]:
+        if guess in ren.columns:
+            ren["Mascot"] = ren[guess].astype(str)
+            break
+    return ren
 
-def rentals_utilization(rentals):
-    bookings=[]
-    for _,r in rentals.iterrows():
-        days=pd.date_range(r["start"],r["end"],freq="D")
-        for d in days: bookings.append({"mascot":r["mascot"],"date":d})
-    used=pd.DataFrame(bookings)
-    used["month"]=used["date"].dt.to_period("M").dt.to_timestamp("M")
-    num=used.groupby(["mascot","month"])["date"].nunique().reset_index()
-    num["days_in_month"]=num["month"].dt.days_in_month
-    num["utilization%"]=(num["date"]/num["days_in_month"]*100).round(1)
-    return num
+sales = load_sales()
+suppliers = load_suppliers()
+rentals = load_rentals()
 
-# -------------------- Data load --------------------
-sales = load_sales(DEFAULT_SALES_PATH)
-suppliers = load_suppliers(DEFAULT_SUPPLIERS_PATH)
-rentals = load_rentals(DEFAULT_RENTALS_PATH)
+# -------------------- SIDEBAR FILTERS --------------------
+with st.sidebar:
+    st.header("Filters")
+    # Date range for sales
+    if "Date" in sales.columns:
+        min_d, max_d = sales["Date"].min(), sales["Date"].max()
+        d1, d2 = st.date_input("Sales date range", value=(min_d, max_d), min_value=min_d, max_value=max_d)
+        mask_date = (sales["Date"].dt.date >= d1) & (sales["Date"].dt.date <= d2)
+    else:
+        mask_date = np.ones(len(sales)).astype(bool)
 
-# -------------------- Filters --------------------
-st.title("🎯 Baba Jina Toys – Executive Dashboard")
-years = sorted(sales["date"].dt.year.unique())
-cats  = sorted(sales["category"].unique())
-col1,col2,col3=st.columns(3)
-year_sel=col1.multiselect("Years",years,[2023,2024])
-cat_sel =col2.multiselect("Categories",cats,["Toys","Halloween","Christmas"])
-show_fc=col3.toggle("Show 2025 Forecast",True)
+    cats = sorted(sales["Category"].dropna().unique().tolist())
+    pick_cats = st.multiselect("Sales categories", cats, default=cats)
+    mask_cat = sales["Category"].isin(pick_cats)
 
-# -------------------- KPIs --------------------
-c1,c2,c3,c4=st.columns(4)
-df_filt=sales[sales["category"].isin(cat_sel)]
-total23=df_filt[df_filt["date"].dt.year==2023]["revenue"].sum()
-total24=df_filt[df_filt["date"].dt.year==2024]["revenue"].sum()
-growth=(total24-total23)/total23*100 if total23>0 else 0
-c1.metric("Total Sales 2024",f"${total24:,.0f}",f"{growth:+.1f}% vs 2023")
+    # Supplier year filter
+    years = [y for y in sorted(suppliers["Year"].dropna().unique().tolist()) if pd.notna(y)]
+    year_sel = st.multiselect("Supplier years", years, default=years)
 
-monthly,forecast=monthly_sales_with_forecast(sales,cat_sel)
-if not forecast.empty:
-    peak=forecast.sort_values("forecast",ascending=False).iloc[0]
-    c2.metric("Peak Month 2025",peak["month"].strftime("%B"),f"${peak['forecast']:,.0f}")
-else:
-    c2.metric("Peak Month 2025","—","—")
+    # Rentals: (optional) month
+    if rentals["start_any"].notna().any():
+        min_r, max_r = rentals["start_any"].min(), rentals["start_any"].max()
+        r1, r2 = st.date_input("Rental period", value=(min_r.date(), max_r.date()), min_value=min_r.date(), max_value=max_r.date())
+        mask_r = (rentals["start_any"].dt.date >= r1) & (rentals["start_any"].dt.date <= r2)
+    else:
+        mask_r = np.ones(len(rentals)).astype(bool)
 
-dep = suppliers.groupby("supplier")["order_amount"].sum().sort_values(ascending=False)
-dep_ratio=dep.head(2).sum()/dep.sum()*100 if dep.sum()>0 else 0
-c3.metric("Supplier Dependence",f"{dep_ratio:.1f}%","Top 2 share")
+sales_f = sales[mask_date & mask_cat].copy()
+suppliers_f = suppliers[suppliers["Year"].isin(year_sel)] if years else suppliers.copy()
+rentals_f = rentals[mask_r].copy()
 
-active=sales[sales["date"]>sales["date"].max()-pd.Timedelta(days=180)]["category"].count()
-c4.metric("Active Customers (proxy)",f"{active:,}","last 180 days")
+# ==================== BAND 1: RETAIL SALES (Outbound) ====================
+st.markdown('<div class="section-title">Retail Sales (Outbound)</div>', unsafe_allow_html=True)
+top_l, top_m, top_r = st.columns([1.1, 1.6, 1.6])
 
-# -------------------- Sales & Forecast --------------------
-st.subheader("📈 Sales & Forecast")
-fig1 = px.line(monthly,x="month",y="revenue",title="Monthly Sales",labels={"revenue":"Revenue"})
-if show_fc:
-    fig1.add_scatter(x=forecast["month"],y=forecast["forecast"],mode="lines",name="Forecast 2025")
-st.plotly_chart(fig1,use_container_width=True)
+with top_l:
+    st.markdown('<div class="card">', unsafe_allow_html=True)
+    st.markdown('<div class="section-sub">Key Performance</div>', unsafe_allow_html=True)
+    revenue = float(sales_f["Revenue"].sum()) if len(sales_f) else 0.0
+    orders  = int(sales_f.shape[0])
+    aov     = (revenue / orders) if orders else 0.0
+    # top category
+    top_cat = sales_f.groupby("Category")["Revenue"].sum().sort_values(ascending=False).head(1)
+    top_cat_name = top_cat.index[0] if len(top_cat) else "—"
+    top_cat_val  = float(top_cat.iloc[0]) if len(top_cat) else 0.0
 
-# -------------------- Suppliers --------------------
-st.subheader("🏭 Top Suppliers")
-top5 = suppliers.groupby("supplier")["order_amount"].sum().nlargest(5).index
-sup_plot=suppliers[suppliers["supplier"].isin(top5)]
-fig2 = px.bar(sup_plot,x="order_amount",y="supplier",color="category",orientation="h",title="Top 5 Suppliers")
-st.plotly_chart(fig2,use_container_width=True)
+    st.markdown(f'<div class="kpi">Revenue (filtered)</div><div class="kpi-val">${revenue:,.0f}</div><div class="kpi-sub">Sum of Total_Amount</div>', unsafe_allow_html=True)
+    st.markdown(f'<div class="kpi">Avg Order Value</div><div class="kpi-val">${aov:,.0f}</div><div class="kpi-sub">Revenue / rows</div>', unsafe_allow_html=True)
+    st.markdown(f'<div class="kpi">Top Category</div><div class="kpi-val">{top_cat_name}</div><div class="kpi-sub">${top_cat_val:,.0f}</div>', unsafe_allow_html=True)
+    st.markdown('</div>', unsafe_allow_html=True)
 
-# -------------------- Rentals --------------------
-st.subheader("🎭 Mascot Rentals Utilization")
-util=rentals_utilization(rentals)
-fig3 = px.density_heatmap(util,x="month",y="mascot",z="utilization%",color_continuous_scale="Blues")
-st.plotly_chart(fig3,use_container_width=True)
+with top_m:
+    st.markdown('<div class="card">', unsafe_allow_html=True)
+    st.markdown('<div class="section-sub">Revenue by Category</div>', unsafe_allow_html=True)
+    if len(sales_f):
+        cat_rev = sales_f.groupby("Category", as_index=False)["Revenue"].sum().sort_values("Revenue", ascending=False)
+        fig = px.bar(cat_rev, x="Category", y="Revenue", text_auto=".2s")
+        fig.update_traces(textposition="outside")
+        fig.update_layout(margin=dict(l=6,r=6,t=6,b=6), height=320)
+        st.plotly_chart(fig, use_container_width=True)
+    else:
+        st.info("No sales data in the current filter.")
+    st.markdown('</div>', unsafe_allow_html=True)
 
-# -------------------- Loyalty Snapshot (proxy) --------------------
-st.subheader("💳 Loyalty Snapshot (RFM Proxy)")
-rfm = sales.groupby("category")["revenue"].sum().reset_index()
-fig4 = px.bar(rfm,x="category",y="revenue",title="Revenue by Category (proxy loyalty)")
-st.plotly_chart(fig4,use_container_width=True)
+with top_r:
+    st.markdown('<div class="card">', unsafe_allow_html=True)
+    st.markdown('<div class="section-sub">Monthly Revenue Trend</div>', unsafe_allow_html=True)
+    if "Month" in sales_f.columns and len(sales_f):
+        m = sales_f.groupby("Month", as_index=False)["Revenue"].sum()
+        fig = px.area(m, x="Month", y="Revenue")
+        fig.update_layout(margin=dict(l=6,r=6,t=6,b=6), height=320)
+        st.plotly_chart(fig, use_container_width=True)
+    else:
+        st.info("Add a Date column to show monthly trend.")
+    st.markdown('</div>', unsafe_allow_html=True)
 
-# -------------------- Delivery Simulator --------------------
-st.subheader("🚚 Delivery Subsidy Simulator")
-with st.form("sim"):
-    orders=st.number_input("Monthly Orders",0,500,100)
-    subsidy=st.number_input("Subsidy per Order $",0.0,20.0,3.5)
-    uplift=st.number_input("Basket Uplift %",0.0,100.0,15.0)
-    margin=st.number_input("Gross Margin %",0.0,100.0,35.0)
-    run=st.form_submit_button("Run")
-if run:
-    base_basket=28
-    new_basket=base_basket*(1+uplift/100)
-    gp=new_basket*(margin/100)*orders
-    cost=subsidy*orders
-    net=gp-cost
-    st.metric("Net Monthly Impact",f"${net:,.0f}")
+st.markdown("---")
 
-# -------------------- Downloads --------------------
-st.subheader("⬇️ Data Exports")
-c1,c2,c3=st.columns(3)
-c1.download_button("Download Sales CSV",sales.to_csv(index=False).encode(),"sales.csv","text/csv")
-c2.download_button("Download Suppliers CSV",suppliers.to_csv(index=False).encode(),"suppliers.csv","text/csv")
-c3.download_button("Download Rentals CSV",rentals.to_csv(index=False).encode(),"rentals.csv","text/csv")
+# ==================== BAND 2: SUPPLY & RENTALS (Inbound) ====================
+st.markdown('<div class="section-title">Supply & Rentals (Inbound)</div>', unsafe_allow_html=True)
+bot_l, bot_m, bot_r = st.columns([1.1, 1.6, 1.6])
+
+with bot_l:
+    st.markdown('<div class="card">', unsafe_allow_html=True)
+    st.markdown('<div class="section-sub">Operations Snapshot</div>', unsafe_allow_html=True)
+
+    # Supplier spend
+    spend = float(suppliers_f["Order_Amount"].sum()) if len(suppliers_f) else 0.0
+    st.markdown(f'<div class="kpi">Supplier Spend</div><div class="kpi-val">${spend:,.0f}</div><div class="kpi-sub">Filtered years</div>', unsafe_allow_html=True)
+
+    # Rentals KPIs
+    if "RentalPrice" in rentals_f.columns:
+        mascots = rentals_f["Mascot"].nunique() if "Mascot" in rentals_f.columns else rentals_f.shape[0]
+        avg_price = float(rentals_f["RentalPrice"].mean())
+        st.markdown(f'<div class="kpi">Mascots</div><div class="kpi-val">{mascots:,}</div><div class="kpi-sub">Unique items</div>', unsafe_allow_html=True)
+        st.markdown(f'<div class="kpi">Avg Rental Price</div><div class="kpi-val">${avg_price:,.0f}</div><div class="kpi-sub">Per mascot</div>', unsafe_allow_html=True)
+    else:
+        st.markdown(f'<div class="kpi">Mascots</div><div class="kpi-val">{rentals_f.shape[0]:,}</div><div class="kpi-sub">Items in rentals.xlsx</div>', unsafe_allow_html=True)
+        st.markdown(f'<div class="kpi">Avg Rental Price</div><div class="kpi-val">—</div><div class="kpi-sub">Add a price column</div>', unsafe_allow_html=True)
+
+    st.markdown('</div>', unsafe_allow_html=True)
+
+with bot_m:
+    st.markdown('<div class="card">', unsafe_allow_html=True)
+    st.markdown('<div class="section-sub">Top Supplier Categories</div>', unsafe_allow_html=True)
+    if len(suppliers_f):
+        cat_spend = suppliers_f.groupby("Category", as_index=False)["Order_Amount"].sum().sort_values("Order_Amount", ascending=False)
+        fig = px.bar(cat_spend.head(12), x="Category", y="Order_Amount", text_auto=".2s")
+        fig.update_traces(textposition="outside")
+        fig.update_layout(margin=dict(l=6,r=6,t=6,b=6), height=320)
+        st.plotly_chart(fig, use_container_width=True)
+    else:
+        st.info("No supplier rows available for the selected years.")
+    st.markdown('</div>', unsafe_allow_html=True)
+
+with bot_r:
+    st.markdown('<div class="card">', unsafe_allow_html=True)
+    st.markdown('<div class="section-sub">Supplier Spend / Rentals Over Time</div>', unsafe_allow_html=True)
+
+    # Prefer suppliers by Year, else rentals by start date
+    if len(suppliers_f) and suppliers_f["Year"].notna().any():
+        y = suppliers_f.groupby("Year", as_index=False)["Order_Amount"].sum().sort_values("Year")
+        fig = px.area(y, x="Year", y="Order_Amount")
+        fig.update_layout(margin=dict(l=6,r=6,t=6,b=6), height=320)
+        st.plotly_chart(fig, use_container_width=True)
+    elif rentals_f["start_any"].notna().any():
+        r = rentals_f.dropna(subset=["start_any"]).copy()
+        r["Month"] = r["start_any"].dt.to_period("M").dt.to_timestamp()
+        r_agg = r.groupby("Month", as_index=False).size().rename(columns={"size":"Bookings"})
+        fig = px.area(r_agg, x="Month", y="Bookings")
+        fig.update_layout(margin=dict(l=6,r=6,t=6,b=6), height=320)
+        st.plotly_chart(fig, use_container_width=True)
+    else:
+        st.info("Add supplier Year or rental dates to show a timeline.")
+    st.markdown('</div>', unsafe_allow_html=True)
+
+# ==================== FOOTER ====================
+st.caption("Layout scaffold only — plug in richer business logic/KPIs as you finalize columns & calculations.")
