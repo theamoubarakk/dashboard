@@ -104,20 +104,46 @@ def load_suppliers():
 sales = load_sales()
 suppliers = load_suppliers()
 
-# ================== SIDEBAR (Year selector for sales) ==================
-year_selected = None
-if sales is not None and "Year" in sales.columns:
-    years = sorted([int(y) for y in sales["Year"].dropna().unique()])
-    default_year = years[-1] if years else None
-    year_selected = st.sidebar.selectbox("Year for Revenue by Product Category", years, index=len(years)-1)
-else:
-    default_year = None
+# ================== SIDEBAR CONTROLS ==================
+def year_list(series):
+    if series is None:
+        return []
+    return sorted([int(y) for y in pd.Series(series).dropna().unique()])
+
+source_choices = []
+if sales is not None:
+    source_choices.append("Sales (by year)")
+if suppliers is not None:
+    source_choices.append("Suppliers (by year)")
+if not source_choices:
+    st.stop()
+
+source_pick = st.sidebar.radio("Source for 'Revenue by Product Category'", source_choices, index=0)
+
+sales_year = None
+sup_year = None
+
+if "Sales" in source_pick and sales is not None and "Year" in sales.columns:
+    s_years = year_list(sales["Year"])
+    sales_year = st.sidebar.selectbox("Sales year", s_years, index=len(s_years)-1)
+elif "Suppliers" in source_pick and suppliers is not None and "Year" in suppliers.columns:
+    sp_years = year_list(suppliers["Year"])
+    sup_year = st.sidebar.selectbox("Suppliers year", sp_years, index=len(sp_years)-1)
 
 # ================== SIZING (compact to avoid scroll) ==================
 H_TALL   = 210
 H_MED    = 190
 H_SHORT  = 150
 MARGIN   = dict(l=4, r=4, t=6, b=4)
+
+def pick_dtick(max_val):
+    """Choose a dtick so we have about <= 8 ticks."""
+    # step candidates in dollars
+    steps = [50_000, 100_000, 200_000, 250_000, 500_000, 1_000_000]
+    for s in steps:
+        if max_val / s <= 8:
+            return s
+    return 2_000_000
 
 # ================== LAYOUT ==================
 col_left, col_right = st.columns([1, 1])
@@ -150,15 +176,10 @@ with col_left:
 
 # ----- RIGHT (3 charts) -----
 with col_right:
-    # 1) Revenue by Product Category — SALES, filtered to the selected year (matches your EDA)
-    if sales is not None:
-        scope = sales.copy()
-        title_suffix = ""
-        if year_selected is not None:
-            scope = scope[scope["Year"] == year_selected]
-            title_suffix = f" ({year_selected})"
-
-        st.subheader(f"Revenue by Product Category{title_suffix}")
+    # 1) Revenue by Product Category — based on sidebar choice
+    if "Sales" in source_pick and sales is not None:
+        scope = sales if sales_year is None else sales[sales["Year"] == sales_year]
+        st.subheader(f"Revenue by Product Category ({sales_year})" if sales_year else "Revenue by Product Category")
 
         cat_rev = (
             scope.groupby("Category", as_index=False)["Revenue"]
@@ -169,25 +190,61 @@ with col_right:
 
         fig3 = px.bar(
             cat_rev,
-            x="Revenue",            # RAW dollars
+            x="Revenue",  # raw dollars
             y="Category",
             orientation="h",
             color="Category",
             text_auto=".0f",
             color_discrete_sequence=color_for(cat_rev["Category"].tolist()),
         )
-
-        # ticks: 0..≥300k by 50k steps (auto-extend to cover max)
         max_x = float(cat_rev["Revenue"].max() or 0.0)
-        step  = 50_000
-        upper = max(300_000, int(np.ceil(max_x / step) * step))
-
+        dt = pick_dtick(max_x)
+        upper = int(np.ceil(max_x / dt) * dt)
         fig3.update_layout(
             height=H_SHORT,
             margin=MARGIN,
             legend_title_text="",
             xaxis_title="Total Revenue ($)",
-            xaxis=dict(tickformat=",", dtick=step, range=[0, upper], ticks="outside"),
+            xaxis=dict(tickformat=",", dtick=dt, range=[0, upper], ticks="outside"),
+            hovermode="y"
+        )
+        fig3.update_traces(
+            hovertemplate="<b>%{y}</b><br>Revenue: $%{x:,.0f}<extra></extra>",
+            texttemplate="$%{x:,.0f}",
+            textposition="outside",
+            cliponaxis=False
+        )
+        st.plotly_chart(fig3, use_container_width=True)
+
+    elif "Suppliers" in source_pick and suppliers is not None:
+        scope = suppliers if sup_year is None else suppliers[suppliers["Year"] == sup_year]
+        st.subheader(f"Revenue by Product Category ({sup_year}) — Suppliers")
+
+        cat_rev = (
+            scope.groupby("Category", as_index=False)["Order_Amount"]
+            .sum()
+            .sort_values("Order_Amount", ascending=False)
+            .head(6)
+        )
+
+        fig3 = px.bar(
+            cat_rev,
+            x="Order_Amount",
+            y="Category",
+            orientation="h",
+            color="Category",
+            text_auto=".0f",
+            color_discrete_sequence=color_for(cat_rev["Category"].tolist()),
+        )
+        max_x = float(cat_rev["Order_Amount"].max() or 0.0)
+        dt = pick_dtick(max_x)
+        upper = int(np.ceil(max_x / dt) * dt)
+        fig3.update_layout(
+            height=H_SHORT,
+            margin=MARGIN,
+            legend_title_text="",
+            xaxis_title="Total Revenue ($)",
+            xaxis=dict(tickformat=",", dtick=dt, range=[0, upper], ticks="outside"),
             hovermode="y"
         )
         fig3.update_traces(
