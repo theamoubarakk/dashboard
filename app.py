@@ -159,7 +159,7 @@ col_left, col_right = st.columns([1, 1])
 with col_left:
     # Monthly revenue over time within range
     if sales_f is not None and not sales_f.empty:
-        st.subheader(f"Monthly Revenue Trend ({range_label()})")
+        st.subheader(f"Monthly Revenue Trend")
         monthly = (
             sales_f.groupby("Month", as_index=False)["Revenue"]
             .sum().sort_values("Month")
@@ -187,7 +187,7 @@ with col_left:
 with col_right:
     # Revenue by Product Category (sales) across selected range
     if sales_f is not None and not sales_f.empty:
-        st.subheader(f"Revenue by Product Category ({range_label()})")
+        st.subheader(f"Revenue by Product Category")
         cat_rev = (
             sales_f.groupby("Category", as_index=False)["Revenue"]
             .sum()
@@ -223,7 +223,7 @@ with col_right:
 
     # Top-5 shops stacked bar in selected range (suppliers)
     if suppliers_f is not None and not suppliers_f.empty:
-        st.subheader(f"Category Distribution for Top 5 Shops (by Order Amount) ({range_label()})")
+        st.subheader(f"Category Distribution for Top 5 Shops (by Order Amount)")
         shop_tot = (
             suppliers_f.groupby("ShopName", as_index=False)["Order_Amount"]
             .sum()
@@ -272,7 +272,7 @@ with col_right:
 
     # Quantity per year within range (suppliers)
     if suppliers_f is not None and "T_QTY" in suppliers_f.columns and not suppliers_f.empty:
-        st.subheader(f"Total Product Quantity Ordered per Year ({range_label()})")
+        st.subheader(f"Total Product Quantity Ordered per Year")
         qty = suppliers_f.groupby("Year", as_index=False)["T_QTY"].sum()
         fig5 = px.bar(
             qty, x="Year", y="T_QTY", text_auto=".2s",
