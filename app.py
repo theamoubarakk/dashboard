@@ -83,8 +83,8 @@ suppliers = load_suppliers()
 
 # ================== SIZING (compact to avoid scroll) ==================
 H_TALL   = 210
-H_MED    = 170
-H_SHORT  = 150
+H_MED    = 190
+H_SHORT  = 140
 MARGIN   = dict(l=4, r=4, t=6, b=4)
 
 # ================== LAYOUT ==================
