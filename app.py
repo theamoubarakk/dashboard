@@ -147,9 +147,6 @@ with col_right:
             .head(6)
         )
 
-        # Convert to thousands
-        cat_rev["Revenue_K"] = cat_rev["Revenue"] / 1000
-
         fig3 = px.bar(
             cat_rev,
             x="Revenue",
