@@ -17,14 +17,8 @@ st.markdown(
           padding-top: 2.2rem !important;   /* more top space */
           padding-bottom: 0.4rem;
       }
-      h2, h3 {
-          margin-top: .25rem;
-          margin-bottom: .35rem;
-      }
-      .stPlotlyChart {
-          margin-top: .2rem;
-          margin-bottom: .2rem;
-      }
+      h2, h3 { margin-top: .25rem; margin-bottom: .35rem; }
+      .stPlotlyChart { margin-top: .2rem; margin-bottom: .2rem; }
     </style>
     """,
     unsafe_allow_html=True,
@@ -63,7 +57,7 @@ def load_sales():
         df["Month"] = df["Date"].dt.to_period("M").dt.to_timestamp()
         df["Year"]  = df["Date"].dt.year
 
-    # Revenue
+    # Revenue (alias for Total_Amount)
     if "Total_Amount" in df.columns:
         df["Revenue"] = pd.to_numeric(df["Total_Amount"], errors="coerce")
     else:
@@ -147,20 +141,20 @@ with col_left:
 
 # ----- RIGHT (3 charts) -----
 with col_right:
-    # 1) Total Revenue by Product Category — from SUPPLIERS, raw dollars ($)
-    if suppliers is not None:
+    # 1) Revenue by Product Category — match EDA (sales, Total_Amount summed by Category), RAW $
+    if sales is not None:
         st.subheader("Revenue by Product Category")
 
         cat_rev = (
-            suppliers.groupby("Category", as_index=False)["Order_Amount"]
+            sales.groupby("Category", as_index=False)["Revenue"]
             .sum()
-            .sort_values("Order_Amount", ascending=False)
+            .sort_values("Revenue", ascending=False)
             .head(6)
         )
 
         fig3 = px.bar(
             cat_rev,
-            x="Order_Amount",     # RAW dollars, not scaled
+            x="Revenue",            # RAW dollars
             y="Category",
             orientation="h",
             color="Category",
@@ -168,8 +162,8 @@ with col_right:
             color_discrete_sequence=color_for(cat_rev["Category"].tolist()),
         )
 
-        # lock to 0..≥300k with 50k steps (or higher if needed)
-        max_x = float(cat_rev["Order_Amount"].max() or 0.0)
+        # ticks: 0..≥300k by 50k steps (adjust if larger)
+        max_x = float(cat_rev["Revenue"].max() or 0.0)
         step  = 50_000
         upper = max(300_000, int(np.ceil(max_x / step) * step))
 
