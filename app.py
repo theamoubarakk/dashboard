@@ -280,9 +280,3 @@ with col_right:
         )
         fig5.update_layout(height=H_SHORT, margin=MARGIN)
         st.plotly_chart(fig5, use_container_width=True)
-
-# ================== FOOTER ==================
-st.caption(
-    "One-page EDA — Monthly trend, category revenue, supplier trends & concentration. "
-    "Global year-range filter applies to all charts."
-)
