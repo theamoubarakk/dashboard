@@ -137,7 +137,7 @@ with col_left:
 
 # ----- RIGHT (3 charts) -----
 with col_right:
-         if sales is not None:
+    if sales is not None:
         st.subheader("Revenue by Product Category")
 
         cat_rev = (
@@ -196,12 +196,10 @@ with col_right:
         )
         stack["ShopName"] = stack["ShopName"].astype(str)
 
-        # 4) Consistent category colors (falls back to palette via color_for if unseen)
-        # Build a color map including any unseen categories:
+        # 4) Consistent category colors
         unique_cats = stack["Category"].unique().tolist()
         color_map = {c: CAT_COLORS.get(c) for c in unique_cats}
         if any(v is None for v in color_map.values()):
-            # fill missing with palette deterministically
             filled = color_for(unique_cats)
             for c, col in zip(unique_cats, filled):
                 color_map[c] = color_map.get(c) or col
@@ -232,9 +230,3 @@ with col_right:
                       color_discrete_sequence=[PALETTE[0]])
         fig5.update_layout(height=H_SHORT, margin=MARGIN)
         st.plotly_chart(fig5, use_container_width=True)
-
-# ================== FOOTER ==================
-st.caption(
-    "📊 One-page EDA — Monthly trend, category revenue, supplier trends & concentration. "
-    "Compact layout designed to fit without scrolling."
-)
