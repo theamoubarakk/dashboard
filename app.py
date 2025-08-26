@@ -104,31 +104,36 @@ def load_suppliers():
 sales = load_sales()
 suppliers = load_suppliers()
 
-# ================== SIDEBAR CONTROLS ==================
-def year_list(series):
-    if series is None:
-        return []
-    return sorted([int(y) for y in pd.Series(series).dropna().unique()])
+# ================== SIDEBAR: GLOBAL YEAR RANGE FILTER ==================
+def collect_years():
+    yrs = []
+    if sales is not None and "Year" in sales.columns:
+        yrs += sales["Year"].dropna().astype(int).unique().tolist()
+    if suppliers is not None and "Year" in suppliers.columns:
+        yrs += suppliers["Year"].dropna().astype(int).unique().tolist()
+    if not yrs:
+        return None, None
+    yrs = sorted(set(yrs))
+    return yrs[0], yrs[-1]
 
-source_choices = []
-if sales is not None:
-    source_choices.append("Sales (by year)")
-if suppliers is not None:
-    source_choices.append("Suppliers (by year)")
-if not source_choices:
+min_year, max_year = collect_years()
+if min_year is None:
     st.stop()
 
-source_pick = st.sidebar.radio("Source for 'Revenue by Product Category'", source_choices, index=0)
+year_start, year_end = st.sidebar.slider(
+    "Select Year Range",
+    min_value=int(min_year),
+    max_value=int(max_year),
+    value=(int(min_year), int(max_year)),
+    step=1,
+)
 
-sales_year = None
-sup_year = None
+# Filter data globally to the selected range
+def in_range(df, col="Year"):
+    return df[(df[col] >= year_start) & (df[col] <= year_end)]
 
-if "Sales" in source_pick and sales is not None and "Year" in sales.columns:
-    s_years = year_list(sales["Year"])
-    sales_year = st.sidebar.selectbox("Sales year", s_years, index=len(s_years)-1)
-elif "Suppliers" in source_pick and suppliers is not None and "Year" in suppliers.columns:
-    sp_years = year_list(suppliers["Year"])
-    sup_year = st.sidebar.selectbox("Suppliers year", sp_years, index=len(sp_years)-1)
+sales_f = in_range(sales) if sales is not None else None
+suppliers_f = in_range(suppliers) if suppliers is not None else None
 
 # ================== SIZING (compact to avoid scroll) ==================
 H_TALL   = 210
@@ -138,22 +143,25 @@ MARGIN   = dict(l=4, r=4, t=6, b=4)
 
 def pick_dtick(max_val):
     """Choose a dtick so we have about <= 8 ticks."""
-    # step candidates in dollars
     steps = [50_000, 100_000, 200_000, 250_000, 500_000, 1_000_000]
     for s in steps:
         if max_val / s <= 8:
             return s
     return 2_000_000
 
+def range_label():
+    return f"{year_start}" if year_start == year_end else f"{year_start}–{year_end}"
+
 # ================== LAYOUT ==================
 col_left, col_right = st.columns([1, 1])
 
 # ----- LEFT (2 charts) -----
 with col_left:
-    if sales is not None and "Month" in sales.columns:
-        st.subheader("Monthly Revenue Trend (2017–2024)")
+    # Monthly revenue over time within range
+    if sales_f is not None and not sales_f.empty:
+        st.subheader(f"Monthly Revenue Trend ({range_label()})")
         monthly = (
-            sales.groupby("Month", as_index=False)["Revenue"]
+            sales_f.groupby("Month", as_index=False)["Revenue"]
             .sum().sort_values("Month")
         )
         fig1 = px.line(
@@ -163,9 +171,10 @@ with col_left:
         fig1.update_layout(height=H_TALL, margin=MARGIN, showlegend=False)
         st.plotly_chart(fig1, use_container_width=True)
 
-    if suppliers is not None and "Year" in suppliers.columns:
-        st.subheader("Annual Supplier Order Amount by Category")
-        cat_year = suppliers.groupby(["Year", "Category"], as_index=False)["Order_Amount"].sum()
+    # Annual supplier series within range
+    if suppliers_f is not None and not suppliers_f.empty:
+        st.subheader(f"Annual Supplier Order Amount by Category ({range_label()})")
+        cat_year = suppliers_f.groupby(["Year", "Category"], as_index=False)["Order_Amount"].sum()
         cats = list(cat_year["Category"].unique())
         fig2 = px.line(
             cat_year, x="Year", y="Order_Amount", color="Category", markers=True,
@@ -176,21 +185,17 @@ with col_left:
 
 # ----- RIGHT (3 charts) -----
 with col_right:
-    # 1) Revenue by Product Category — based on sidebar choice
-    if "Sales" in source_pick and sales is not None:
-        scope = sales if sales_year is None else sales[sales["Year"] == sales_year]
-        st.subheader(f"Revenue by Product Category ({sales_year})" if sales_year else "Revenue by Product Category")
-
+    # Revenue by Product Category (sales) across selected range
+    if sales_f is not None and not sales_f.empty:
+        st.subheader(f"Revenue by Product Category ({range_label()})")
         cat_rev = (
-            scope.groupby("Category", as_index=False)["Revenue"]
+            sales_f.groupby("Category", as_index=False)["Revenue"]
             .sum()
             .sort_values("Revenue", ascending=False)
-            .head(6)
         )
-
         fig3 = px.bar(
             cat_rev,
-            x="Revenue",  # raw dollars
+            x="Revenue",
             y="Category",
             orientation="h",
             color="Category",
@@ -216,65 +221,23 @@ with col_right:
         )
         st.plotly_chart(fig3, use_container_width=True)
 
-    elif "Suppliers" in source_pick and suppliers is not None:
-        scope = suppliers if sup_year is None else suppliers[suppliers["Year"] == sup_year]
-        st.subheader(f"Revenue by Product Category ({sup_year}) — Suppliers")
-
-        cat_rev = (
-            scope.groupby("Category", as_index=False)["Order_Amount"]
-            .sum()
-            .sort_values("Order_Amount", ascending=False)
-            .head(6)
-        )
-
-        fig3 = px.bar(
-            cat_rev,
-            x="Order_Amount",
-            y="Category",
-            orientation="h",
-            color="Category",
-            text_auto=".0f",
-            color_discrete_sequence=color_for(cat_rev["Category"].tolist()),
-        )
-        max_x = float(cat_rev["Order_Amount"].max() or 0.0)
-        dt = pick_dtick(max_x)
-        upper = int(np.ceil(max_x / dt) * dt)
-        fig3.update_layout(
-            height=H_SHORT,
-            margin=MARGIN,
-            legend_title_text="",
-            xaxis_title="Total Revenue ($)",
-            xaxis=dict(tickformat=",", dtick=dt, range=[0, upper], ticks="outside"),
-            hovermode="y"
-        )
-        fig3.update_traces(
-            hovertemplate="<b>%{y}</b><br>Revenue: $%{x:,.0f}<extra></extra>",
-            texttemplate="$%{x:,.0f}",
-            textposition="outside",
-            cliponaxis=False
-        )
-        st.plotly_chart(fig3, use_container_width=True)
-
-    # 2) Category Distribution for Top 5 Shops (stacked bar)
-    if suppliers is not None:
-        st.subheader("Category Distribution for Top 5 Shops (by Order Amount)")
-
+    # Top-5 shops stacked bar in selected range (suppliers)
+    if suppliers_f is not None and not suppliers_f.empty:
+        st.subheader(f"Category Distribution for Top 5 Shops (by Order Amount) ({range_label()})")
         shop_tot = (
-            suppliers.groupby("ShopName", as_index=False)["Order_Amount"]
+            suppliers_f.groupby("ShopName", as_index=False)["Order_Amount"]
             .sum()
             .sort_values("Order_Amount", ascending=False)
         )
-        top5_shops = shop_tot.head(5)["ShopName"]
-
+        top5 = shop_tot.head(5)["ShopName"]
         stack = (
-            suppliers[suppliers["ShopName"].isin(top5_shops)]
+            suppliers_f[suppliers_f["ShopName"].isin(top5)]
             .groupby(["ShopName", "Category"], as_index=False)["Order_Amount"]
             .sum()
         )
-
         shop_order = (
             shop_tot.set_index("ShopName")
-            .loc[top5_shops]["Order_Amount"]
+            .loc[top5]["Order_Amount"]
             .sort_values(ascending=False)
             .index.astype(str)
             .tolist()
@@ -307,10 +270,10 @@ with col_right:
         )
         st.plotly_chart(fig4, use_container_width=True)
 
-    # 3) Quantity per Year
-    if suppliers is not None and "T_QTY" in suppliers.columns:
-        st.subheader("Total Product Quantity Ordered per Year")
-        qty = suppliers.groupby("Year", as_index=False)["T_QTY"].sum()
+    # Quantity per year within range (suppliers)
+    if suppliers_f is not None and "T_QTY" in suppliers_f.columns and not suppliers_f.empty:
+        st.subheader(f"Total Product Quantity Ordered per Year ({range_label()})")
+        qty = suppliers_f.groupby("Year", as_index=False)["T_QTY"].sum()
         fig5 = px.bar(
             qty, x="Year", y="T_QTY", text_auto=".2s",
             color_discrete_sequence=[PALETTE[0]]
@@ -321,5 +284,5 @@ with col_right:
 # ================== FOOTER ==================
 st.caption(
     "One-page EDA — Monthly trend, category revenue, supplier trends & concentration. "
-    "Compact layout designed to fit without scrolling."
+    "Global year-range filter applies to all charts."
 )
