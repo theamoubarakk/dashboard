@@ -147,23 +147,20 @@ with col_left:
 
 # ----- RIGHT (3 charts) -----
 with col_right:
-    # 1) Revenue by Product Category — in thousands ($000) with clean ticks
-    if sales is not None:
+    # 1) Total Revenue by Product Category — from SUPPLIERS, raw dollars ($)
+    if suppliers is not None:
         st.subheader("Revenue by Product Category")
 
         cat_rev = (
-            sales.groupby("Category", as_index=False)["Revenue"]
+            suppliers.groupby("Category", as_index=False)["Order_Amount"]
             .sum()
-            .sort_values("Revenue", ascending=False)
+            .sort_values("Order_Amount", ascending=False)
             .head(6)
         )
 
-        # scale to thousands
-        cat_rev["Revenue_K"] = cat_rev["Revenue"] / 1000.0
-
         fig3 = px.bar(
             cat_rev,
-            x="Revenue_K",
+            x="Order_Amount",     # RAW dollars, not scaled
             y="Category",
             orientation="h",
             color="Category",
@@ -171,33 +168,22 @@ with col_right:
             color_discrete_sequence=color_for(cat_rev["Category"].tolist()),
         )
 
-        # ---- Tick logic: prefer 0..300/350 with step 50 if feasible; otherwise pick a larger step ----
-        max_k = float(cat_rev["Revenue_K"].max() or 0.0)
-
-        if max_k <= 350:
-            step = 50
-            upper = max(300, int(np.ceil(max_k / step) * step))
-        else:
-            # choose a step so we have at most ~8 ticks
-            for s in [100, 200, 500, 1000, 2000, 5000]:
-                if max_k / s <= 8:
-                    step = s
-                    break
-            else:
-                step = 10000
-            upper = int(np.ceil(max_k / step) * step)
+        # lock to 0..≥300k with 50k steps (or higher if needed)
+        max_x = float(cat_rev["Order_Amount"].max() or 0.0)
+        step  = 50_000
+        upper = max(300_000, int(np.ceil(max_x / step) * step))
 
         fig3.update_layout(
             height=H_SHORT,
             margin=MARGIN,
             legend_title_text="",
-            xaxis_title="Total Revenue ($000)",
+            xaxis_title="Total Revenue ($)",
             xaxis=dict(tickformat=",", dtick=step, range=[0, upper], ticks="outside"),
             hovermode="y"
         )
         fig3.update_traces(
-            hovertemplate="<b>%{y}</b><br>Revenue: $%{x:,.0f}k<extra></extra>",
-            texttemplate="$%{x:,.0f}k",
+            hovertemplate="<b>%{y}</b><br>Revenue: $%{x:,.0f}<extra></extra>",
+            texttemplate="$%{x:,.0f}",
             textposition="outside",
             cliponaxis=False
         )
