@@ -1,4 +1,5 @@
 # app.py
+import os
 import streamlit as st
 import pandas as pd
 import numpy as np
@@ -19,20 +20,41 @@ CARD_CSS = """
 """
 st.markdown(CARD_CSS, unsafe_allow_html=True)
 
-# -------------------- FILE PATHS --------------------
-SALES_PATH     = "/mnt/data/(3) BABA JINA SALES DATA.xlsx"
-SUPPLIERS_PATH = "/mnt/data/suppliers_data_cleaned.xlsx"
-RENTALS_PATH   = "/mnt/data/rentals.xlsx"
+# -------------------- DATA SOURCES (UPLOADERS + FALLBACK) --------------------
+# If you commit files to your repo, put them under ./data with these names:
+DEFAULT_SALES_PATH     = "data/BABA_JINA_SALES_DATA.xlsx"        # rename your file to this in /data
+DEFAULT_SUPPLIERS_PATH = "data/suppliers_data_cleaned.xlsx"
+DEFAULT_RENTALS_PATH   = "data/rentals.xlsx"
+
+with st.sidebar:
+    st.header("Data sources")
+    up_sales     = st.file_uploader("Sales (.xlsx)",     type=["xlsx"], key="up_sales")
+    up_suppliers = st.file_uploader("Suppliers (.xlsx)", type=["xlsx"], key="up_suppliers")
+    up_rentals   = st.file_uploader("Rentals (.xlsx)",   type=["xlsx"], key="up_rentals")
+
+def _resolve_source(uploaded_file, default_path):
+    """Uploaded file > local data/ path > None"""
+    if uploaded_file is not None:
+        return uploaded_file
+    if os.path.exists(default_path):
+        return default_path
+    return None
+
+sales_src     = _resolve_source(up_sales,     DEFAULT_SALES_PATH)
+suppliers_src = _resolve_source(up_suppliers, DEFAULT_SUPPLIERS_PATH)
+rentals_src   = _resolve_source(up_rentals,   DEFAULT_RENTALS_PATH)
 
 # -------------------- LOADERS (ROBUST) --------------------
 @st.cache_data(show_spinner=False)
-def load_sales():
-    df = pd.read_excel(SALES_PATH)
-    # expected columns from your report: Date, Category, Quantity, Unit_Price, Total_Amount, Subcategory, Customer_ID
-    # normalize
+def load_sales(src):
+    if src is None:
+        return pd.DataFrame()
+    df = pd.read_excel(src)
+    # expected columns from your project: Date, Category, Quantity, Unit_Price, Total_Amount, Subcategory, Customer_ID
     if "Date" in df.columns:
         df["Date"] = pd.to_datetime(df["Date"], errors="coerce")
-    # revenue
+        df["Year"] = df["Date"].dt.year
+        df["Month"] = df["Date"].dt.to_period("M").dt.to_timestamp()
     if "Total_Amount" in df.columns:
         df["Revenue"] = pd.to_numeric(df["Total_Amount"], errors="coerce")
     else:
@@ -41,25 +63,23 @@ def load_sales():
         df["Revenue"] = q * p
     df["Category"] = df.get("Category", "Unknown").fillna("Unknown")
     df["Subcategory"] = df.get("Subcategory", "Unknown").fillna("Unknown")
-    if "Date" in df.columns:
-        df["Year"] = df["Date"].dt.year
-        df["Month"] = df["Date"].dt.to_period("M").dt.to_timestamp()
     return df.dropna(subset=["Revenue"])
 
 @st.cache_data(show_spinner=False)
-def load_suppliers():
-    sup = pd.read_excel(SUPPLIERS_PATH)
-    # try to derive order value
+def load_suppliers(src):
+    if src is None:
+        return pd.DataFrame()
+    sup = pd.read_excel(src)
+    # derive order value
     if "Amount" in sup.columns:
         sup["Order_Amount"] = pd.to_numeric(sup["Amount"], errors="coerce")
     elif "AMOUNT" in sup.columns:
         sup["Order_Amount"] = pd.to_numeric(sup["AMOUNT"], errors="coerce")
     else:
-        # fallback from Price * CTN_Box if present
         price = pd.to_numeric(sup.get("Price"), errors="coerce")
         ctn   = pd.to_numeric(sup.get("CTN_Box"), errors="coerce")
         sup["Order_Amount"] = price * ctn
-    # year column in your writeup was "New_Year"
+    # year column could be New_Year or Year
     if "New_Year" in sup.columns:
         sup["Year"] = sup["New_Year"]
     elif "Year" not in sup.columns:
@@ -68,10 +88,11 @@ def load_suppliers():
     return sup.dropna(subset=["Order_Amount"])
 
 @st.cache_data(show_spinner=False)
-def load_rentals():
-    ren = pd.read_excel(RENTALS_PATH)
-    # optional bookings sheet/columns; keep graceful if missing
-    # Normalize potential columns
+def load_rentals(src):
+    if src is None:
+        return pd.DataFrame()
+    ren = pd.read_excel(src)
+    # Normalize potential date columns
     for col in ["Start_Date","End_Date","start_date","end_date","Date","date"]:
         if col in ren.columns:
             ren[col] = pd.to_datetime(ren[col], errors="coerce")
@@ -93,33 +114,51 @@ def load_rentals():
             break
     return ren
 
-sales = load_sales()
-suppliers = load_suppliers()
-rentals = load_rentals()
+sales = load_sales(sales_src)
+suppliers = load_suppliers(suppliers_src)
+rentals = load_rentals(rentals_src)
+
+# Helpful notices
+if sales_src is None:
+    st.warning("Sales file not found. Upload it in the sidebar or place it at data/BABA_JINA_SALES_DATA.xlsx.")
+if suppliers_src is None:
+    st.warning("Suppliers file not found. Upload it or place it at data/suppliers_data_cleaned.xlsx.")
+if rentals_src is None:
+    st.warning("Rentals file not found. Upload it or place it at data/rentals.xlsx.")
 
 # -------------------- SIDEBAR FILTERS --------------------
 with st.sidebar:
     st.header("Filters")
     # Date range for sales
-    if "Date" in sales.columns:
+    if "Date" in sales.columns and not sales.empty:
         min_d, max_d = sales["Date"].min(), sales["Date"].max()
-        d1, d2 = st.date_input("Sales date range", value=(min_d, max_d), min_value=min_d, max_value=max_d)
+        d1, d2 = st.date_input(
+            "Sales date range",
+            value=(min_d.date(), max_d.date()),
+            min_value=min_d.date(),
+            max_value=max_d.date()
+        )
         mask_date = (sales["Date"].dt.date >= d1) & (sales["Date"].dt.date <= d2)
     else:
         mask_date = np.ones(len(sales)).astype(bool)
 
-    cats = sorted(sales["Category"].dropna().unique().tolist())
+    cats = sorted(sales.get("Category", pd.Series(dtype=str)).dropna().unique().tolist())
     pick_cats = st.multiselect("Sales categories", cats, default=cats)
-    mask_cat = sales["Category"].isin(pick_cats)
+    mask_cat = sales.get("Category", pd.Series(["Unknown"] * len(sales))).isin(pick_cats) if len(cats) else np.ones(len(sales)).astype(bool)
 
     # Supplier year filter
-    years = [y for y in sorted(suppliers["Year"].dropna().unique().tolist()) if pd.notna(y)]
+    years = [y for y in sorted(suppliers.get("Year", pd.Series(dtype=float)).dropna().unique().tolist()) if pd.notna(y)]
     year_sel = st.multiselect("Supplier years", years, default=years)
 
-    # Rentals: (optional) month
-    if rentals["start_any"].notna().any():
+    # Rentals period
+    if not rentals.empty and rentals["start_any"].notna().any():
         min_r, max_r = rentals["start_any"].min(), rentals["start_any"].max()
-        r1, r2 = st.date_input("Rental period", value=(min_r.date(), max_r.date()), min_value=min_r.date(), max_value=max_r.date())
+        r1, r2 = st.date_input(
+            "Rental period",
+            value=(min_r.date(), max_r.date()),
+            min_value=min_r.date(),
+            max_value=max_r.date()
+        )
         mask_r = (rentals["start_any"].dt.date >= r1) & (rentals["start_any"].dt.date <= r2)
     else:
         mask_r = np.ones(len(rentals)).astype(bool)
@@ -139,7 +178,7 @@ with top_l:
     orders  = int(sales_f.shape[0])
     aov     = (revenue / orders) if orders else 0.0
     # top category
-    top_cat = sales_f.groupby("Category")["Revenue"].sum().sort_values(ascending=False).head(1)
+    top_cat = sales_f.groupby("Category")["Revenue"].sum().sort_values(ascending=False).head(1) if len(sales_f) else pd.Series(dtype=float)
     top_cat_name = top_cat.index[0] if len(top_cat) else "—"
     top_cat_val  = float(top_cat.iloc[0]) if len(top_cat) else 0.0
 
@@ -182,11 +221,9 @@ bot_l, bot_m, bot_r = st.columns([1.1, 1.6, 1.6])
 with bot_l:
     st.markdown('<div class="card">', unsafe_allow_html=True)
     st.markdown('<div class="section-sub">Operations Snapshot</div>', unsafe_allow_html=True)
-
     # Supplier spend
     spend = float(suppliers_f["Order_Amount"].sum()) if len(suppliers_f) else 0.0
     st.markdown(f'<div class="kpi">Supplier Spend</div><div class="kpi-val">${spend:,.0f}</div><div class="kpi-sub">Filtered years</div>', unsafe_allow_html=True)
-
     # Rentals KPIs
     if "RentalPrice" in rentals_f.columns:
         mascots = rentals_f["Mascot"].nunique() if "Mascot" in rentals_f.columns else rentals_f.shape[0]
@@ -196,7 +233,6 @@ with bot_l:
     else:
         st.markdown(f'<div class="kpi">Mascots</div><div class="kpi-val">{rentals_f.shape[0]:,}</div><div class="kpi-sub">Items in rentals.xlsx</div>', unsafe_allow_html=True)
         st.markdown(f'<div class="kpi">Avg Rental Price</div><div class="kpi-val">—</div><div class="kpi-sub">Add a price column</div>', unsafe_allow_html=True)
-
     st.markdown('</div>', unsafe_allow_html=True)
 
 with bot_m:
@@ -215,14 +251,13 @@ with bot_m:
 with bot_r:
     st.markdown('<div class="card">', unsafe_allow_html=True)
     st.markdown('<div class="section-sub">Supplier Spend / Rentals Over Time</div>', unsafe_allow_html=True)
-
     # Prefer suppliers by Year, else rentals by start date
     if len(suppliers_f) and suppliers_f["Year"].notna().any():
         y = suppliers_f.groupby("Year", as_index=False)["Order_Amount"].sum().sort_values("Year")
         fig = px.area(y, x="Year", y="Order_Amount")
         fig.update_layout(margin=dict(l=6,r=6,t=6,b=6), height=320)
         st.plotly_chart(fig, use_container_width=True)
-    elif rentals_f["start_any"].notna().any():
+    elif not rentals_f.empty and rentals_f["start_any"].notna().any():
         r = rentals_f.dropna(subset=["start_any"]).copy()
         r["Month"] = r["start_any"].dt.to_period("M").dt.to_timestamp()
         r_agg = r.groupby("Month", as_index=False).size().rename(columns={"size":"Bookings"})
