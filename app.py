@@ -137,19 +137,34 @@ with col_left:
 
 # ----- RIGHT (3 charts) -----
 with col_right:
-    if sales is not None:
+         if sales is not None:
         st.subheader("Revenue by Product Category")
+
         cat_rev = (
             sales.groupby("Category", as_index=False)["Revenue"]
             .sum()
             .sort_values("Revenue", ascending=False)
             .head(6)
         )
+
+        # Convert to thousands
+        cat_rev["Revenue_K"] = cat_rev["Revenue"] / 1000
+
         fig3 = px.bar(
-            cat_rev, x="Revenue", y="Category", orientation="h", text_auto=".2s",
-            color="Category", color_discrete_sequence=color_for(cat_rev["Category"].tolist()),
+            cat_rev,
+            x="Revenue_K",
+            y="Category",
+            orientation="h",
+            text_auto=".0f",
+            color="Category",
+            color_discrete_sequence=color_for(cat_rev["Category"].tolist()),
         )
-        fig3.update_layout(height=H_SHORT, margin=MARGIN, legend_title_text="")
+        fig3.update_layout(
+            height=H_SHORT,
+            margin=MARGIN,
+            legend_title_text="",
+            xaxis_title="Total Revenue ($000)"
+        )
         st.plotly_chart(fig3, use_container_width=True)
 
     # ===== REPLACED WITH STACKED BAR (Option B logic) =====
