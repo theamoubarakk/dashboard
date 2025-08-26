@@ -22,7 +22,7 @@ st.markdown(CARD_CSS, unsafe_allow_html=True)
 
 # -------------------- DATA SOURCES (UPLOADERS + FALLBACK) --------------------
 # If you commit files to your repo, put them under ./data with these names:
-DEFAULT_SALES_PATH     = "data/BABA_JINA_SALES_DATA.xlsx"        # rename your file to this in /data
+DEFAULT_SALES_PATH     = "data/(3) BABA_JINA_SALES_DATA.xlsx"        # rename your file to this in /data
 DEFAULT_SUPPLIERS_PATH = "data/suppliers_data_cleaned.xlsx"
 DEFAULT_RENTALS_PATH   = "data/rentals.xlsx"
 
