@@ -152,7 +152,7 @@ with col_right:
 
         fig3 = px.bar(
             cat_rev,
-            x="Revenue_K",
+            x="Revenue",
             y="Category",
             orientation="h",
             text_auto=".0f",
@@ -163,7 +163,17 @@ with col_right:
             height=H_SHORT,
             margin=MARGIN,
             legend_title_text="",
-            xaxis_title="Total Revenue ($000)"
+            xaxis_title="Total Revenue ($)",
+            xaxis=dict(
+                dtick=50000,          # 0, 50k, 100k, ...
+                tickformat=",",       # 350,000 style
+            ),
+            hovermode="y"
+        )
+       # nicer hover: $ with thousands separator
+        fig3.update_traces(
+            hovertemplate="<b>%{y}</b><br>Revenue: $%{x:,.0f}<extra></extra>",
+            texttemplate="$%{x:,.0f}"
         )
         st.plotly_chart(fig3, use_container_width=True)
 
