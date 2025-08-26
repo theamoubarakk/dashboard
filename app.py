@@ -143,32 +143,62 @@ with col_right:
         fig3.update_layout(height=H_SHORT, margin=MARGIN, legend_title_text="")
         st.plotly_chart(fig3, use_container_width=True)
 
+    # ===== REPLACED WITH STACKED BAR (Option B logic) =====
     if suppliers is not None:
-        st.subheader("Category Distribution for Top 5 Shops")
-        top5 = (
+        st.subheader("Category Distribution for Top 5 Shops (by Order Amount)")
+
+        # 1) Top 5 shops by total amount
+        shop_tot = (
             suppliers.groupby("ShopName", as_index=False)["Order_Amount"]
             .sum()
             .sort_values("Order_Amount", ascending=False)
-            .head(5)["ShopName"]
         )
-        shop_data = suppliers[suppliers["ShopName"].isin(top5)]
-        # order shops by total for a nicer left→right drop
+        top5_shops = shop_tot.head(5)["ShopName"]
+
+        # 2) Aggregate by Shop × Category for stacking
+        stack = (
+            suppliers[suppliers["ShopName"].isin(top5_shops)]
+            .groupby(["ShopName", "Category"], as_index=False)["Order_Amount"]
+            .sum()
+        )
+
+        # 3) Ensure categorical axis is ordered by shop total desc
         shop_order = (
-            shop_data.groupby("ShopName")["Order_Amount"].sum()
+            shop_tot.set_index("ShopName")
+            .loc[top5_shops]["Order_Amount"]
             .sort_values(ascending=False)
-            .index.tolist()
+            .index.astype(str)
+            .tolist()
         )
+        stack["ShopName"] = stack["ShopName"].astype(str)
+
+        # 4) Consistent category colors (falls back to palette via color_for if unseen)
+        # Build a color map including any unseen categories:
+        unique_cats = stack["Category"].unique().tolist()
+        color_map = {c: CAT_COLORS.get(c) for c in unique_cats}
+        if any(v is None for v in color_map.values()):
+            # fill missing with palette deterministically
+            filled = color_for(unique_cats)
+            for c, col in zip(unique_cats, filled):
+                color_map[c] = color_map.get(c) or col
+
         fig4 = px.bar(
-            shop_data,
+            stack,
             x="ShopName",
             y="Order_Amount",
             color="Category",
             barmode="stack",
             category_orders={"ShopName": shop_order},
             text_auto=".2s",
-            color_discrete_sequence=px.colors.qualitative.Set2,
+            color_discrete_map=color_map,
         )
-        fig4.update_layout(height=H_SHORT, margin=MARGIN, legend_title_text="Category")
+        fig4.update_layout(
+            height=H_SHORT,
+            margin=MARGIN,
+            legend_title_text="Category",
+            yaxis=dict(tickformat=","),
+            hovermode="x unified",
+        )
         st.plotly_chart(fig4, use_container_width=True)
 
     if suppliers is not None and "T_QTY" in suppliers.columns:
