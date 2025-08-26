@@ -1,4 +1,4 @@
-# app.py — EDA-only, 1-page, meaningful KPIs & charts
+# app.py — Single-page EDA dashboard (no KPIs)
 import os
 import numpy as np
 import pandas as pd
@@ -6,17 +6,15 @@ import plotly.express as px
 import streamlit as st
 
 # ---------- PAGE ----------
-st.set_page_config(page_title="Baba Jina | EDA Dashboard", layout="wide")
+st.set_page_config(page_title="Baba Jina | EDA Dashboard (One Page)", layout="wide")
 
 CSS = """
 <style>
-.card {background:#fff;border-radius:14px;padding:16px 18px;border:1px solid #eef0f4;box-shadow:0 4px 18px rgba(0,0,0,0.06)}
-.kpi-title{font-size:12px;color:#6b7280}
-.kpi-val{font-size:28px;font-weight:800;margin-top:2px}
-.kpi-sub{font-size:11px;color:#9aa2af}
-.h2{font-size:20px;font-weight:800;margin:6px 0 12px}
-.section-sub{font-size:12px;color:#64748b;margin-bottom:6px}
-.empty{background:#f1f5f9;border:1px solid #e2e8f0;border-radius:12px;padding:16px;color:#475569}
+.wrap {max-width: 1400px; margin: 0 auto;}
+.card {background:#fff;border-radius:14px;padding:12px 14px;border:1px solid #eef0f4;box-shadow:0 4px 16px rgba(0,0,0,.05)}
+.h2{font-size:19px;font-weight:800;margin:6px 0 10px}
+.section-sub{font-size:12px;color:#64748b;margin:0 0 6px}
+.empty{background:#f8fafc;border:1px solid #e2e8f0;border-radius:12px;padding:14px;color:#475569}
 </style>
 """
 st.markdown(CSS, unsafe_allow_html=True)
@@ -28,7 +26,7 @@ SUPPLIERS_XLSX = os.path.join(DATA_DIR, "suppliers_data_cleaned.xlsx")
 # ---------- LOADERS ----------
 @st.cache_data(show_spinner=False)
 def load_sales_pack():
-    """Prefer compact parquet artifacts if present; else load Excel and derive needed aggregates."""
+    """Prefer parquet if present, else Excel; compute aggregates used by charts."""
     p_monthly = os.path.join(DATA_DIR, "sales_monthly.parquet")
     p_cat     = os.path.join(DATA_DIR, "sales_by_category.parquet")
     p_slim    = os.path.join(DATA_DIR, "sales_slim.parquet")
@@ -57,7 +55,6 @@ def load_sales_pack():
         p = pd.to_numeric(df.get("Unit_Price", np.nan), errors="coerce")
         df["Revenue"] = q * p
     df["Category"] = df.get("Category", "Unknown").fillna("Unknown")
-    df["Customer_ID"] = df.get("Customer_ID")
 
     monthly = (
         df.dropna(subset=["Month"])
@@ -68,7 +65,7 @@ def load_sales_pack():
         df.groupby("Category", as_index=False)["Revenue"].sum()
           .sort_values("Revenue", ascending=False)
     )
-    slim = df[["Date","Month","Year","month_num","Category","Customer_ID","Revenue"]].copy()
+    slim = df[["Date","Month","Year","month_num","Category","Revenue"]].copy()
     return {"monthly": monthly, "by_cat": by_cat, "slim": slim}
 
 @st.cache_data(show_spinner=False)
@@ -107,18 +104,18 @@ def load_suppliers():
 sales_pack = load_sales_pack()
 suppliers  = load_suppliers()
 
-# ---------- FILTERS ----------
+# ---------- FILTERS (left sidebar) ----------
 with st.sidebar:
     st.header("Filters")
 
-    # Sales date filter
+    # Sales date range
     if sales_pack["slim"] is not None and "Date" in sales_pack["slim"].columns:
-        s = sales_pack["slim"].dropna(subset=["Date"]).copy()
+        s = sales_pack["slim"].dropna(subset=["Date"])
         min_d, max_d = s["Date"].min().date(), s["Date"].max().date()
         d1, d2 = st.date_input("Sales date range", value=(min_d, max_d), min_value=min_d, max_value=max_d)
         mask = (s["Date"].dt.date >= d1) & (s["Date"].dt.date <= d2)
         sales_rows = s[mask]
-        # recompute aggregates within selection
+        # recompute aggregates for charts
         if "Month" in s.columns:
             sales_monthly = sales_rows.groupby("Month", as_index=False)["Revenue"].sum()
         else:
@@ -130,7 +127,7 @@ with st.sidebar:
         sales_monthly= sales_pack["monthly"]
         sales_by_cat = sales_pack["by_cat"]
 
-    # Suppliers year filter
+    # Supplier years
     if suppliers is not None and suppliers["Year"].notna().any():
         years = sorted([int(y) for y in suppliers["Year"].dropna().unique()])
         year_sel = st.multiselect("Supplier years", years, default=years)
@@ -138,157 +135,99 @@ with st.sidebar:
     else:
         sup_f = suppliers
 
-# ---------- KPI HELPERS ----------
-def fmt_money(x):
-    try:
-        x = float(x)
-    except Exception:
-        return "$0"
-    if x >= 1_000_000: return f"${x/1_000_000:.1f}M"
-    if x >= 1_000:     return f"${x/1_000:.1f}K"
-    return f"${x:,.0f}"
+st.markdown('<div class="wrap">', unsafe_allow_html=True)
+st.markdown('<div class="h2">Exploratory Data Overview</div>', unsafe_allow_html=True)
 
-# ---------- ROW 1: KPIs ----------
-st.markdown('<div class="h2">Key Indicators</div>', unsafe_allow_html=True)
-k1, k2, k3, k4, k5 = st.columns([1,1,1,1,1])
-
-with k1:
-    st.markdown('<div class="card">', unsafe_allow_html=True)
-    st.markdown('<div class="kpi-title">Revenue (YTD)</div>', unsafe_allow_html=True)
-    if sales_rows is not None and not sales_rows.empty:
-        ytd_year = pd.Timestamp.today().year
-        ytd = sales_rows[sales_rows["Date"].dt.year == ytd_year]["Revenue"].sum()
-        st.markdown(f'<div class="kpi-val">{fmt_money(ytd)}</div>', unsafe_allow_html=True)
-    else:
-        st.markdown('<div class="kpi-val">$0</div>', unsafe_allow_html=True)
-    st.markdown('</div>', unsafe_allow_html=True)
-
-with k2:
-    st.markdown('<div class="card">', unsafe_allow_html=True)
-    st.markdown('<div class="kpi-title">Average Order Value</div>', unsafe_allow_html=True)
-    if sales_rows is not None and not sales_rows.empty:
-        aov = sales_rows["Revenue"].mean()
-        st.markdown(f'<div class="kpi-val">{fmt_money(aov)}</div>', unsafe_allow_html=True)
-    else:
-        st.markdown('<div class="kpi-val">$0</div>', unsafe_allow_html=True)
-    st.markdown('</div>', unsafe_allow_html=True)
-
-with k3:
-    st.markdown('<div class="card">', unsafe_allow_html=True)
-    st.markdown('<div class="kpi-title">Active Customers</div>', unsafe_allow_html=True)
-    if sales_rows is not None and not sales_rows.empty and "Customer_ID" in sales_rows.columns:
-        st.markdown(f'<div class="kpi-val">{sales_rows["Customer_ID"].nunique():,}</div>', unsafe_allow_html=True)
-    else:
-        st.markdown('<div class="kpi-val">0</div>', unsafe_allow_html=True)
-    st.markdown('</div>', unsafe_allow_html=True)
-
-with k4:
-    st.markdown('<div class="card">', unsafe_allow_html=True)
-    st.markdown('<div class="kpi-title">Supplier Spend (YTD)</div>', unsafe_allow_html=True)
-    if sup_f is not None and not sup_f.empty and sup_f["Year"].notna().any():
-        ytd_year = pd.Timestamp.today().year
-        spend_ytd = sup_f[sup_f["Year"] == ytd_year]["Order_Amount"].sum()
-        st.markdown(f'<div class="kpi-val">{fmt_money(spend_ytd)}</div>', unsafe_allow_html=True)
-    else:
-        st.markdown('<div class="kpi-val">$0</div>', unsafe_allow_html=True)
-    st.markdown('</div>', unsafe_allow_html=True)
-
-with k5:
-    st.markdown('<div class="card">', unsafe_allow_html=True)
-    st.markdown('<div class="kpi-title">Supplier Dependency (Top 2)</div>', unsafe_allow_html=True)
-    if sup_f is not None and not sup_f.empty:
-        by_shop = (sup_f.groupby("ShopName", as_index=False)["Order_Amount"].sum()
-                         .sort_values("Order_Amount", ascending=False))
-        total = by_shop["Order_Amount"].sum()
-        pct = (by_shop.head(2)["Order_Amount"].sum() / total * 100) if total else 0
-        st.markdown(f'<div class="kpi-val">{pct:.1f}%</div>', unsafe_allow_html=True)
-    else:
-        st.markdown('<div class="kpi-val">0%</div>', unsafe_allow_html=True)
-    st.markdown('</div>', unsafe_allow_html=True)
-
-st.markdown("---")
-
-# ---------- ROW 2: SALES (left, wider) + SUPPLIERS (right) ----------
-left, right = st.columns([1.6, 1.0])
-
-# SALES COLUMN
-with left:
-    st.markdown('<div class="h2">Sales (EDA)</div>', unsafe_allow_html=True)
-
-    # 1) Monthly Revenue Trend
+# ---------- LAYOUT: 3 × 2 grid (all charts visible on one page) ----------
+# Row 1
+row1_left, row1_right = st.columns([1.4, 1.0])
+with row1_left:
     st.markdown('<div class="card">', unsafe_allow_html=True)
     st.markdown('<div class="section-sub">Monthly Revenue Trend</div>', unsafe_allow_html=True)
     if sales_monthly is not None and not sales_monthly.empty:
         fig = px.area(sales_monthly, x="Month", y="Revenue")
-        fig.update_layout(height=280, margin=dict(l=6,r=6,t=6,b=6))
-        st.plotly_chart(fig, use_container_width=True, key="sales_monthly_trend")
+        fig.update_layout(height=260, margin=dict(l=6, r=6, t=6, b=6))
+        st.plotly_chart(fig, use_container_width=True, key="c_sales_trend")
     else:
         st.markdown('<div class="empty">No monthly sales available.</div>', unsafe_allow_html=True)
     st.markdown('</div>', unsafe_allow_html=True)
 
-    # 2) Revenue by Category (Top 8)
-    st.markdown('<div class="card" style="margin-top:12px;">', unsafe_allow_html=True)
+with row1_right:
+    st.markdown('<div class="card">', unsafe_allow_html=True)
+    st.markdown('<div class="section-sub">Supplier Spend by Category (Yearly)</div>', unsafe_allow_html=True)
+    if sup_f is not None and not sup_f.empty and sup_f["Year"].notna().any():
+        agg = sup_f.groupby(["Year","Category"], as_index=False)["Order_Amount"].sum()
+        fig = px.bar(agg, x="Year", y="Order_Amount", color="Category", barmode="stack")
+        fig.update_layout(height=260, margin=dict(l=6, r=6, t=6, b=6), legend_title_text="")
+        st.plotly_chart(fig, use_container_width=True, key="c_sup_year_cat")
+    else:
+        st.markdown('<div class="empty">Need Year & Category columns in suppliers data.</div>', unsafe_allow_html=True)
+    st.markdown('</div>', unsafe_allow_html=True)
+
+# Row 2
+row2_left, row2_right = st.columns([1.0, 1.0])
+with row2_left:
+    st.markdown('<div class="card">', unsafe_allow_html=True)
     st.markdown('<div class="section-sub">Revenue by Product Category (Top 8)</div>', unsafe_allow_html=True)
     if sales_by_cat is not None and not sales_by_cat.empty:
         top8 = sales_by_cat.head(8)
         fig = px.bar(top8, x="Category", y="Revenue", text_auto=".2s")
         fig.update_traces(textposition="outside")
-        fig.update_layout(height=280, margin=dict(l=6,r=6,t=6,b=6))
-        st.plotly_chart(fig, use_container_width=True, key="sales_by_category")
+        fig.update_layout(height=260, margin=dict(l=6, r=6, t=6, b=6))
+        st.plotly_chart(fig, use_container_width=True, key="c_sales_cat_top")
     else:
         st.markdown('<div class="empty">No category breakdown available.</div>', unsafe_allow_html=True)
     st.markdown('</div>', unsafe_allow_html=True)
 
-    # 3) Year x Month Heatmap (Seasonality)
-    st.markdown('<div class="card" style="margin-top:12px;">', unsafe_allow_html=True)
-    st.markdown('<div class="section-sub">Seasonality Heatmap (Year × Month)</div>', unsafe_allow_html=True)
-    if sales_rows is not None and not sales_rows.empty and {"Year","month_num"}.issubset(sales_rows.columns):
-        mat = (sales_rows
-               .groupby(["Year","month_num"], as_index=False)["Revenue"].sum())
-        # ensure 1..12 rows per year
-        all_months = pd.DataFrame({"month_num": range(1,13)})
-        heat = (mat.merge(all_months, how="right", on="month_num")
-                   .pivot_table(index="Year", columns="month_num", values="Revenue", aggfunc="sum")
-                   .fillna(0).sort_index())
-        heat.columns = [str(c) for c in heat.columns]
-        fig = px.imshow(heat, aspect="auto", color_continuous_scale="Blues",
-                        labels=dict(x="Month", y="Year", color="Revenue"))
-        fig.update_layout(height=300, margin=dict(l=6,r=6,t=6,b=6))
-        st.plotly_chart(fig, use_container_width=True, key="sales_seasonality_heatmap")
-    else:
-        st.markdown('<div class="empty">Not enough date columns to compute seasonality.</div>', unsafe_allow_html=True)
-    st.markdown('</div>', unsafe_allow_html=True)
-
-# SUPPLIERS COLUMN
-with right:
-    st.markdown('<div class="h2">Suppliers (EDA)</div>', unsafe_allow_html=True)
-
-    # 4) Supplier Spend by Category over Years
+with row2_right:
     st.markdown('<div class="card">', unsafe_allow_html=True)
-    st.markdown('<div class="section-sub">Spend by Category over Years</div>', unsafe_allow_html=True)
-    if sup_f is not None and not sup_f.empty and sup_f["Year"].notna().any():
-        agg = sup_f.groupby(["Year","Category"], as_index=False)["Order_Amount"].sum()
-        fig = px.bar(agg, x="Year", y="Order_Amount", color="Category", barmode="stack")
-        fig.update_layout(height=300, margin=dict(l=6,r=6,t=6,b=6), legend_title_text="")
-        st.plotly_chart(fig, use_container_width=True, key="suppliers_spend_stack")
-    else:
-        st.markdown('<div class="empty">Need Year & Category columns in suppliers data.</div>', unsafe_allow_html=True)
-    st.markdown('</div>', unsafe_allow_html=True)
-
-    # 5) Top 5 Shops by Total Spend (stacked by category)
-    st.markdown('<div class="card" style="margin-top:12px;">', unsafe_allow_html=True)
-    st.markdown('<div class="section-sub">Top 5 Shops by Total Spend (by Category)</div>', unsafe_allow_html=True)
+    st.markdown('<div class="section-sub">Top 5 Shops by Total Spend (stacked by Category)</div>', unsafe_allow_html=True)
     if sup_f is not None and not sup_f.empty:
         by_shop_cat = sup_f.groupby(["ShopName","Category"], as_index=False)["Order_Amount"].sum()
-        top5_shops = (by_shop_cat.groupby("ShopName", as_index=False)["Order_Amount"].sum()
-                                   .sort_values("Order_Amount", ascending=False).head(5)["ShopName"])
-        plot_df = by_shop_cat[by_shop_cat["ShopName"].isin(top5_shops)]
+        top5 = (by_shop_cat.groupby("ShopName", as_index=False)["Order_Amount"].sum()
+                            .sort_values("Order_Amount", ascending=False).head(5)["ShopName"])
+        plot_df = by_shop_cat[by_shop_cat["ShopName"].isin(top5)]
         fig = px.bar(plot_df, x="ShopName", y="Order_Amount", color="Category", barmode="stack")
-        fig.update_layout(height=300, margin=dict(l=6,r=6,t=6,b=6), legend_title_text="")
-        st.plotly_chart(fig, use_container_width=True, key="suppliers_top5_stacked")
+        fig.update_layout(height=260, margin=dict(l=6, r=6, t=6, b=6), legend_title_text="")
+        st.plotly_chart(fig, use_container_width=True, key="c_sup_top5")
     else:
         st.markdown('<div class="empty">No supplier rows to rank.</div>', unsafe_allow_html=True)
     st.markdown('</div>', unsafe_allow_html=True)
 
+# Row 3
+row3_left, row3_right = st.columns([1.0, 1.0])
+with row3_left:
+    st.markdown('<div class="card">', unsafe_allow_html=True)
+    st.markdown('<div class="section-sub">Seasonality Heatmap (Year × Month)</div>', unsafe_allow_html=True)
+    if sales_rows is not None and not sales_rows.empty and {"Year","month_num"}.issubset(sales_rows.columns):
+        mat = sales_rows.groupby(["Year","month_num"], as_index=False)["Revenue"].sum()
+        # pivot to Year × Month
+        heat = (mat.pivot_table(index="Year", columns="month_num", values="Revenue", aggfunc="sum")
+                   .fillna(0).sort_index())
+        heat.columns = [str(m) for m in heat.columns]
+        fig = px.imshow(heat, aspect="auto", color_continuous_scale="Blues",
+                        labels=dict(x="Month", y="Year", color="Revenue"))
+        fig.update_layout(height=260, margin=dict(l=6, r=6, t=6, b=6))
+        st.plotly_chart(fig, use_container_width=True, key="c_sales_heat")
+    else:
+        st.markdown('<div class="empty">Not enough date columns to compute seasonality.</div>', unsafe_allow_html=True)
+    st.markdown('</div>', unsafe_allow_html=True)
+
+with row3_right:
+    st.markdown('<div class="card">', unsafe_allow_html=True)
+    st.markdown('<div class="section-sub">Category Share Over Time (stacked area)</div>', unsafe_allow_html=True)
+    if sales_rows is not None and not sales_rows.empty and "Month" in sales_rows.columns:
+        # aggregate month × category for stacked area
+        mcat = (sales_rows.groupby(["Month","Category"], as_index=False)["Revenue"].sum()
+                          .sort_values("Month"))
+        fig = px.area(mcat, x="Month", y="Revenue", color="Category", groupnorm=None)
+        fig.update_layout(height=260, margin=dict(l=6, r=6, t=6, b=6), legend_title_text="")
+        st.plotly_chart(fig, use_container_width=True, key="c_sales_area_share")
+    else:
+        st.markdown('<div class="empty">Need Month and Category columns to build area chart.</div>', unsafe_allow_html=True)
+    st.markdown('</div>', unsafe_allow_html=True)
+
+st.markdown('</div>', unsafe_allow_html=True)
+
 # ---------- FOOTER ----------
-st.caption("EDA dashboard — focused on core trends and concentrations. Forecasting to be added later.")
+st.caption("One-page EDA: sales trend & seasonality, category mix, supplier spend & concentration.")
