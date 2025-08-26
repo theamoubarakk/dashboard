@@ -149,7 +149,7 @@ col_left, col_right = st.columns([1, 1])
 # LEFT CHARTS
 with col_left:
     if sales_f is not None and not sales_f.empty:
-        st.subheader(f"Monthly Revenue Trend ({range_label()})")
+        st.subheader(f"Monthly Revenue Trend")
         monthly = sales_f.groupby("Month", as_index=False)["Revenue"].sum().sort_values("Month")
         fig1 = px.line(monthly, x="Month", y="Revenue", markers=True,
                        color_discrete_sequence=[PALETTE[0]])
@@ -157,7 +157,7 @@ with col_left:
         st.plotly_chart(fig1, use_container_width=True)
 
     if suppliers_f is not None and not suppliers_f.empty:
-        st.subheader(f"Annual Supplier Order Amount by Category ({range_label()})")
+        st.subheader(f"Annual Supplier Order Amount by Category")
         cat_year = suppliers_f.groupby(["Year", "Category"], as_index=False)["Order_Amount"].sum()
         cats = list(cat_year["Category"].unique())
         fig2 = px.line(cat_year, x="Year", y="Order_Amount", color="Category",
@@ -170,7 +170,7 @@ with col_left:
 with col_right:
     # Revenue by Category
     if sales_f is not None and not sales_f.empty:
-        st.subheader(f"Revenue by Product Category ({range_label()})")
+        st.subheader(f"Revenue by Product Category")
         cat_rev = sales_f.groupby("Category", as_index=False)["Revenue"].sum().sort_values("Revenue", ascending=False)
         fig3 = px.bar(cat_rev, x="Revenue", y="Category", orientation="h",
                       color="Category", text_auto=".0f",
@@ -185,7 +185,7 @@ with col_right:
 
     # Category Distribution for Top 5 Shops
     if suppliers_f is not None and not suppliers_f.empty:
-        st.subheader(f"Category Distribution for Top 5 Shops (by Order Amount) ({range_label()})")
+        st.subheader(f"Category Distribution for Top 5 Shops (by Order Amount)")
 
         shop_tot = suppliers_f.groupby("ShopName", as_index=False)["Order_Amount"].sum().sort_values("Order_Amount", ascending=False)
         top5 = shop_tot.head(5)["ShopName"].astype(str).tolist()
@@ -216,7 +216,7 @@ with col_right:
 
     # Quantity per year
     if suppliers_f is not None and "T_QTY" in suppliers_f.columns and not suppliers_f.empty:
-        st.subheader(f"Total Product Quantity Ordered per Year ({range_label()})")
+        st.subheader(f"Total Product Quantity Ordered per Year")
         qty = suppliers_f.groupby("Year", as_index=False)["T_QTY"].sum()
         fig5 = px.bar(qty, x="Year", y="T_QTY", text_auto=".2s", color_discrete_sequence=[PALETTE[0]])
         fig5.update_layout(height=H_SHORT, margin=MARGIN)
