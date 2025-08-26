@@ -119,7 +119,7 @@ with col_right:
         fig3.update_layout(height=H_SHORT, margin=MARGIN, legend_title_text="")
         st.plotly_chart(fig3, use_container_width=True)
 
-       if suppliers is not None:
+     if suppliers is not None:
         # 4. Category Distribution for Top 5 Shops (by Order Amount)
         st.markdown("### Category Distribution for Top 5 Shops")
         top5_shops = suppliers.groupby("Shop", as_index=False)["Order_Amount"].sum()\
