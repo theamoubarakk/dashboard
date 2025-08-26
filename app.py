@@ -147,8 +147,8 @@ with col_left:
 
 # ----- RIGHT (3 charts) -----
 with col_right:
-    # 1) Revenue by Product Category (dynamic ticks, raw $)
-       if sales is not None:
+    # 1) Revenue by Product Category — in thousands ($000)
+    if sales is not None:
         st.subheader("Revenue by Product Category")
 
         cat_rev = (
@@ -159,7 +159,7 @@ with col_right:
         )
 
         # scale to thousands
-        cat_rev["Revenue_K"] = cat_rev["Revenue"] / 1000
+        cat_rev["Revenue_K"] = cat_rev["Revenue"] / 1000.0
 
         fig3 = px.bar(
             cat_rev,
@@ -170,29 +170,24 @@ with col_right:
             text_auto=".0f",
             color_discrete_sequence=color_for(cat_rev["Category"].tolist()),
         )
-
         fig3.update_layout(
             height=H_SHORT,
             margin=MARGIN,
             legend_title_text="",
-            xaxis_title="Total Revenue ($000)",    # explicitly show it's in thousands
+            xaxis_title="Total Revenue ($000)",   # axis in thousands
             xaxis=dict(
-                tickformat=",",   # comma separators
-                dtick=50,        # 0, 50, 100, 150 ... (in thousands)
+                tickformat=",",   # 0, 50, 100, 150, ...
+                dtick=50
             ),
             hovermode="y"
         )
-
-        # nice labels
         fig3.update_traces(
             hovertemplate="<b>%{y}</b><br>Revenue: $%{x:,.0f}k<extra></extra>",
             texttemplate="$%{x:,.0f}k",
             textposition="outside",
             cliponaxis=False
         )
-
         st.plotly_chart(fig3, use_container_width=True)
-
 
     # 2) Category Distribution for Top 5 Shops (stacked bar)
     if suppliers is not None:
@@ -250,8 +245,10 @@ with col_right:
     if suppliers is not None and "T_QTY" in suppliers.columns:
         st.subheader("Total Product Quantity Ordered per Year")
         qty = suppliers.groupby("Year", as_index=False)["T_QTY"].sum()
-        fig5 = px.bar(qty, x="Year", y="T_QTY", text_auto=".2s",
-                      color_discrete_sequence=[PALETTE[0]])
+        fig5 = px.bar(
+            qty, x="Year", y="T_QTY", text_auto=".2s",
+            color_discrete_sequence=[PALETTE[0]]
+        )
         fig5.update_layout(height=H_SHORT, margin=MARGIN)
         st.plotly_chart(fig5, use_container_width=True)
 
