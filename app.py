@@ -167,21 +167,47 @@ with col_left:
 
 # RIGHT CHARTS
 with col_right:
+  # RIGHT CHARTS
+with col_right:
     if sales_f is not None and not sales_f.empty:
         st.subheader(f"Revenue by Product Category")
-        cat_rev = sales_f.groupby("Category", as_index=False)["Revenue"].sum().sort_values("Revenue", ascending=False)
-        fig3 = px.bar(cat_rev, x="Revenue", y="Category", orientation="h",
-                      color="Category", text_auto=".0f",
-                      color_discrete_sequence=color_for(cat_rev["Category"].tolist()))
-        max_x = float(cat_rev["Revenue"].max() or 0.0)
+
+        # Divide revenue by 30
+        cat_rev = sales_f.groupby("Category", as_index=False)["Revenue"].sum()
+        cat_rev["Revenue_adj"] = cat_rev["Revenue"] / 30
+        cat_rev = cat_rev.sort_values("Revenue_adj", ascending=False)
+
+        fig3 = px.bar(
+            cat_rev,
+            x="Revenue_adj",
+            y="Category",
+            orientation="h",
+            color="Category",
+            text_auto=".0f",
+            color_discrete_sequence=color_for(cat_rev["Category"].tolist())
+        )
+
+        max_x = float(cat_rev["Revenue_adj"].max() or 0.0)
         dt = pick_dtick(max_x)
         upper = int(np.ceil(max_x / dt) * dt)
-        fig3.update_layout(height=H_SHORT, margin=MARGIN, legend_title_text="",
-                           xaxis_title="Total Revenue ($)",
-                           xaxis=dict(tickformat=",", dtick=dt, range=[0, upper],
-                                      ticks="outside", showgrid=False),
-                           yaxis=dict(showgrid=False))
+
+        fig3.update_layout(
+            height=H_SHORT,
+            margin=MARGIN,
+            legend_title_text="",
+            xaxis_title="Total Revenue (÷30)",
+            xaxis=dict(
+                tickformat=",",
+                dtick=dt,
+                range=[0, upper],
+                ticks="outside",
+                showgrid=False
+            ),
+            yaxis=dict(showgrid=False)
+        )
+
         st.plotly_chart(fig3, use_container_width=True)
+
 
     if suppliers_f is not None and not suppliers_f.empty:
         st.subheader(f"Category Distribution for Top 5 Shops (by Order Amount)")
