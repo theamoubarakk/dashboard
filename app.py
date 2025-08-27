@@ -193,7 +193,7 @@ with col_right:
             height=H_SHORT,
             margin=MARGIN,
             legend_title_text="",
-            xaxis_title="Total Revenue (÷30)",
+            xaxis_title="Total Revenue",
             xaxis=dict(tickformat=",", dtick=dt, range=[0, upper], ticks="outside", showgrid=False),
             yaxis=dict(showgrid=False),
         )
